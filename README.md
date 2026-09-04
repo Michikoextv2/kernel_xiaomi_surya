@@ -2,6 +2,17 @@
 
 This repository contains the custom kernel source code and releases for the Xiaomi Poco X3 NFC (device codename: surya). 
 
+## Overview
+
+This kernel is built with a focus on stability and efficiency while maintaining balanced performance. It is designed to work reliably across AOSP-based ROMs, MIUI, HyperOS, and other ported distributions.
+
+## Supported Devices
+
+| Device | Codename |
+|---|---|
+| Xiaomi POCO X3 NFC | `surya` |
+| Xiaomi POCO X3 | `karna` |
+
 ## Kernel Variants
 
 This project provides two distinct kernel variants built from different base sources to accommodate various ROM requirements:
@@ -13,6 +24,15 @@ This project provides two distinct kernel variants built from different base sou
 * **SuperPotato**
   * **Base:** Rethinking
   * **Description:** Built upon the rethinking kernel tree.
+ 
+## ROM Compatibility
+
+| ROM Type | Status |
+|---|---|
+| AOSP-based ROMs | Supported |
+| MIUI | Supported |
+| HyperOS | Supported |
+| Ported ROMs | Supported |
 
 ## Flashing Instructions
 
