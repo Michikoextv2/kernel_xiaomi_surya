@@ -166,7 +166,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-miatoll-${{ github.sha }}
+          key: ccache-surya-${{ github.sha }}
           restore-keys: |
             ccache-surya-
             ccache-
@@ -353,7 +353,7 @@ jobs:
           zip_path  = os.environ["ZIP_PATH"]
 
           caption = (
-              "SuperCreepy-{DATE_TAG}\n"
+              "Build Completed✅"
               "Device  : {TARGET_DEVICE}\n"
               "Release : {RELEASE_URL}"
           ).format(
