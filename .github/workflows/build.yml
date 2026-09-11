@@ -51,15 +51,15 @@ jobs:
     env:
       ARCH: arm64
       SUBARCH: arm64
-      KBUILD_BUILD_HOST: standalone
-      KBUILD_BUILD_USER: xyz
+      KBUILD_BUILD_HOST: xyz
+      KBUILD_BUILD_USER: standalone
       USE_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CLANG_DIR: ${{ github.workspace }}/toolchain/clang
       GCC32_DIR: ${{ github.workspace }}/toolchain/gcc32
       AK3_DIR: ${{ github.workspace }}/AnyKernel3
       KERNEL_DIR: ${{ github.workspace }}/kernel-source
-      KERNEL_NAME: SuperPotato
+      KERNEL_NAME: SuperCreepy
       TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
       DEFCONFIG: surya_defconfig
       TG_CHAT_ID: "-1003988216382"
@@ -97,8 +97,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ca-certificates cpio curl \
-            flex git jq libelf-dev libssl-dev lld llvm make \
-            python3 python3-requests unzip xz-utils zstd ccache lz4
+            flex git jq libelf-dev libssl-dev \
+            python3 python3-requests unzip xz-utils zstd ccache lz4 \
+            rsync flex dwarves make libdw-dev pkg-config device-tree-compiler
 
       # --------------------------------------------------------------------
       # 3. Restore FoxeClang cache
@@ -187,7 +188,6 @@ jobs:
           if [[ -n "$CUSTOM_TAG" ]]; then
             RELEASE_TAG="$CUSTOM_TAG"
           else
-            # Auto tag: hanya angka tanggal, contoh: 11092026
             RELEASE_TAG="$DATE_TAG"
           fi
 
@@ -217,9 +217,15 @@ jobs:
             exit 1
           fi
 
+          # Catat waktu mulai build
+          echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
           chmod +x "$KERNEL_DIR/buildci.sh"
           cd "$KERNEL_DIR"
           bash buildci.sh
+
+          # Catat waktu selesai build (hanya kompilasi, sebelum packaging)
+          echo "BUILD_END=$(date +%s)" >> "$GITHUB_ENV"
 
       # --------------------------------------------------------------------
       # 9. Verify kernel output
@@ -283,6 +289,13 @@ jobs:
           COMMIT_LOG=$(git -C "$KERNEL_DIR" log -5 \
             --pretty=format:"- \`%h\` %s (%an)" --no-merges)
 
+          # Hitung durasi build untuk release notes
+          BUILD_DURATION_SEC=$(( BUILD_END - BUILD_START ))
+          BUILD_DURATION="${BUILD_DURATION_SEC}s"
+          if (( BUILD_DURATION_SEC >= 60 )); then
+            BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
+          fi
+
           cat > "${GITHUB_WORKSPACE}/release_notes.md" << EOF
           ## SuperCreepy-${DATE_TAG}
 
@@ -302,11 +315,15 @@ jobs:
           | Clang     | FoxeClang v23.0-20260822 |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
           | Defconfig | \`${DEFCONFIG}\`         |
+          | Duration  | ${BUILD_DURATION}        |
           | Size      | ${ZIP_SIZE}              |
 
           ---
           Built by [Michikoextv2](https://github.com/Michikoextv2)
           EOF
+
+          # Export Telegram
+          echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
 
       # --------------------------------------------------------------------
       # 13. Upload kernel ZIP as artifact
@@ -353,13 +370,17 @@ jobs:
           zip_path  = os.environ["ZIP_PATH"]
 
           caption = (
-              "Build Completed✅"
-              "Device  : {TARGET_DEVICE}\n"
-              "Release : {RELEASE_URL}"
+              "✅ Build Completed\n"
+              "\n"
+              "📱 Device   : {TARGET_DEVICE}\n"
+              "⏱️ Duration  : {BUILD_DURATION}\n"
+              "📦 Size     : {ZIP_SIZE}\n"
+              "🔗 Release  : {RELEASE_URL}"
           ).format(
-              DATE_TAG      = os.environ["DATE_TAG"],
-              TARGET_DEVICE = os.environ["TARGET_DEVICE"],
-              RELEASE_URL   = os.environ["RELEASE_URL"],
+              TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
+              BUILD_DURATION = os.environ["BUILD_DURATION"],
+              ZIP_SIZE       = os.environ["ZIP_SIZE"],
+              RELEASE_URL    = os.environ["RELEASE_URL"],
           )
 
           url = f"https://api.telegram.org/bot{token}/sendDocument"
