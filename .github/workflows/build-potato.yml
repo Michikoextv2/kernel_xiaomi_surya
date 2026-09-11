@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: Michiko Kernel Build
+name: SuperPotato Kernel
 
 on:
   push:
@@ -310,7 +310,7 @@ jobs:
 
           | Key       | Value                    |
           |-----------|--------------------------|
-          | Branch    | \`lineage-23.2\`         |
+          | Branch    | \`Potato\`               |
           | Runner    | \`ubuntu-24.04\`         |
           | Clang     | FoxeClang v23.0-20260822 |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
