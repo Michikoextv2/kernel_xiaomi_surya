@@ -372,10 +372,10 @@ jobs:
           caption = (
               "✅ Build Completed\n"
               "\n"
-              "📱 Device   : {TARGET_DEVICE}\n"
-              "⏱️ Duration  : {BUILD_DURATION}\n"
-              "📦 Size     : {ZIP_SIZE}\n"
-              "🔗 Release  : {RELEASE_URL}"
+              "Device   : {TARGET_DEVICE}\n"
+              "Duration : {BUILD_DURATION}\n"
+              "Size     : {ZIP_SIZE}\n"
+              "Release  : {RELEASE_URL}"
           ).format(
               TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
               BUILD_DURATION = os.environ["BUILD_DURATION"],
