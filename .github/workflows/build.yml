@@ -62,8 +62,8 @@ jobs:
       KERNEL_NAME: SuperCreepy
       TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
       DEFCONFIG: surya_defconfig
-      TG_CHAT_ID: "-1003988216382"
-      TG_THREAD_ID: "3"
+      TG_CHAT_ID: "-1003641667794"
+      TG_THREAD_ID: "625"
 
     steps:
       # --------------------------------------------------------------------
