@@ -1,0 +1,413 @@
+# ==============================================================================
+# Michiko Kernel - Automated Build Workflow
+# Target    : Poco X3 NFC (surya/karna)
+# Branch    : lineage-23.2
+# Runner    : ubuntu-24.04
+# Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
+# ==============================================================================
+
+name: Michiko Kernel Build
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Custom release tag (leave empty for auto: DDMMYYYY)"
+        required: false
+        default: ""
+      send_telegram:
+        description: "Send ZIP to Telegram after build?"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build Kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    permissions:
+      contents: write
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      KBUILD_BUILD_HOST: xyz
+      KBUILD_BUILD_USER: standalone
+      USE_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CLANG_DIR: ${{ github.workspace }}/toolchain/clang
+      GCC32_DIR: ${{ github.workspace }}/toolchain/gcc32
+      AK3_DIR: ${{ github.workspace }}/AnyKernel3
+      KERNEL_DIR: ${{ github.workspace }}/kernel-source
+      KERNEL_NAME: SuperPotato
+      TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
+      DEFCONFIG: surya_defconfig
+      TG_CHAT_ID: "-1003988216382"
+      TG_THREAD_ID: "3"
+
+    steps:
+      # --------------------------------------------------------------------
+      # 0. Inject GH_PAT
+      # --------------------------------------------------------------------
+      - name: Configure git credentials
+        run: |
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.GH_PAT }}@github.com" \
+            > ~/.git-credentials
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf \
+            "https://github.com/"
+
+      # --------------------------------------------------------------------
+      # 1. Checkout kernel source
+      # --------------------------------------------------------------------
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: FoxMiko-Labs/kernel_xiaomi_surya
+          ref: potato
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 5
+          path: kernel-source
+
+      # --------------------------------------------------------------------
+      # 2. Install build dependencies
+      # --------------------------------------------------------------------
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl \
+            flex git jq libelf-dev libssl-dev \
+            python3 python3-requests unzip xz-utils zstd ccache lz4 \
+            rsync flex dwarves make libdw-dev pkg-config device-tree-compiler
+
+      # --------------------------------------------------------------------
+      # 3. Restore FoxeClang cache
+      # --------------------------------------------------------------------
+      - name: Restore FoxeClang cache
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: foxe-clang-v23.0-20260822
+
+      - name: Download and extract FoxeClang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$CLANG_DIR"
+          curl -fSL --retry 3 -o foxe-clang.tar.zst \
+            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v23.0-20260822/FoxeClang-23.0-20260822.tar.zst"
+          tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
+            -C "$CLANG_DIR" --strip-components=1
+          rm -f foxe-clang.tar.zst
+
+      # --------------------------------------------------------------------
+      # 4. Restore FoxGCC ARM32 cache
+      # --------------------------------------------------------------------
+      - name: Restore FoxGCC ARM32 cache
+        id: cache-gcc32
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GCC32_DIR }}
+          key: fox-gcc32-v17.0-20260822
+
+      - name: Download and extract FoxGCC ARM32
+        if: steps.cache-gcc32.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$GCC32_DIR"
+          curl -fSL --retry 3 -o fox-gcc32.tar.zst \
+            "https://github.com/FoxMiko-Labs/Fox-GCC/releases/download/v17.0-20260822/FoxGCC-17-arm-20260822.tar.zst"
+          tar --use-compress-program=zstd -xf fox-gcc32.tar.zst \
+            -C "$GCC32_DIR" --strip-components=1
+          rm -f fox-gcc32.tar.zst
+
+      # --------------------------------------------------------------------
+      # 5. Validate toolchains
+      # --------------------------------------------------------------------
+      - name: Validate toolchains
+        run: |
+          set -e
+          if [[ ! -x "$CLANG_DIR/bin/clang" ]]; then
+            echo "::error::clang not found at $CLANG_DIR/bin/clang"
+            exit 1
+          fi
+          echo "Clang  : $("$CLANG_DIR/bin/clang" --version | head -n1)"
+
+          GCC32_BIN=$(find "$GCC32_DIR" -name "arm-eabi-gcc" -type f | head -1)
+          if [[ -z "$GCC32_BIN" ]]; then
+            echo "::warning::arm-eabi-gcc not found in $GCC32_DIR"
+          else
+            echo "GCC32  : $GCC32_BIN"
+          fi
+
+      # --------------------------------------------------------------------
+      # 6. Restore and configure ccache
+      # --------------------------------------------------------------------
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-surya-${{ github.sha }}
+          restore-keys: |
+            ccache-surya2-
+            ccache-
+
+      - name: Configure ccache
+        run: |
+          ccache --max-size=5G
+          ccache --zero-stats
+
+      # --------------------------------------------------------------------
+      # 7. Resolve release tag
+      # --------------------------------------------------------------------
+      - name: Resolve release tag
+        run: |
+          CUSTOM_TAG="${{ github.event.inputs.release_tag }}"
+          DATE_TAG=$(TZ=Asia/Jakarta date +%d%m%Y)
+
+          if [[ -n "$CUSTOM_TAG" ]]; then
+            RELEASE_TAG="$CUSTOM_TAG"
+          else
+            RELEASE_TAG="$DATE_TAG"
+          fi
+
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+
+          echo "DATE_TAG=${DATE_TAG}"       >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          echo "RELEASE_URL=${RELEASE_URL}" >> "$GITHUB_ENV"
+
+          echo "Date tag    : ${DATE_TAG}"
+          echo "Release tag : ${RELEASE_TAG}"
+          echo "Release URL : ${RELEASE_URL}"
+
+      # --------------------------------------------------------------------
+      # 8. Build kernel
+      # --------------------------------------------------------------------
+      - name: Build kernel
+        run: |
+          echo "Device    : $TARGET_DEVICE"
+          echo "Defconfig : $DEFCONFIG"
+          echo "CPU cores : $(nproc --all)"
+
+          if [[ ! -f "$KERNEL_DIR/buildci.sh" ]]; then
+            echo "::error::buildci.sh tidak ditemukan di $KERNEL_DIR"
+            echo "--- Isi direktori kernel-source ---"
+            ls -la "$KERNEL_DIR"
+            exit 1
+          fi
+
+          # Catat waktu mulai build
+          echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
+          chmod +x "$KERNEL_DIR/buildci.sh"
+          cd "$KERNEL_DIR"
+          bash buildci.sh
+
+          # Catat waktu selesai build (hanya kompilasi, sebelum packaging)
+          echo "BUILD_END=$(date +%s)" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------------------------
+      # 9. Verify kernel output
+      # --------------------------------------------------------------------
+      - name: Verify kernel output
+        run: |
+          IMAGE="$KERNEL_DIR/out/arch/arm64/boot/Image.gz"
+          if [[ ! -f "$IMAGE" ]]; then
+            echo "::error::Kernel image not found - build may have failed silently"
+            exit 1
+          fi
+          echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
+
+      # --------------------------------------------------------------------
+      # 10. Clone AnyKernel3
+      # --------------------------------------------------------------------
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 \
+            https://github.com/Michikoextv2/AK3-Surya.git \
+            -b spotato "$AK3_DIR"
+
+      # --------------------------------------------------------------------
+      # 11. Package kernel ZIP
+      # --------------------------------------------------------------------
+      - name: Package kernel ZIP
+        run: |
+          ZIP_NAME="${KERNEL_NAME}-${DATE_TAG}.zip"
+          ZIP_PATH="${GITHUB_WORKSPACE}/${ZIP_NAME}"
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+          echo "ZIP_PATH=${ZIP_PATH}" >> "$GITHUB_ENV"
+
+          for img in Image.gz dtb.img dtbo.img; do
+            src="$KERNEL_DIR/out/arch/arm64/boot/$img"
+            if [[ -f "$src" ]]; then
+              cp "$src" "$AK3_DIR/kernels"
+              echo "Copied : $img"
+            else
+              echo "Skip   : $img (not found)"
+            fi
+          done
+
+          (
+            cd "$AK3_DIR"
+            zip -r9 "$ZIP_PATH" . \
+              -x "*.git*" \
+              -x "README.md" \
+              -x "*.github*"
+          )
+
+          ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+          echo "ZIP_SIZE=${ZIP_SIZE}" >> "$GITHUB_ENV"
+          echo "Packaged : ${ZIP_NAME} (${ZIP_SIZE})"
+
+      # --------------------------------------------------------------------
+      # 12. Generate release notes
+      # --------------------------------------------------------------------
+      - name: Generate release notes
+        run: |
+          COMMIT_LOG=$(git -C "$KERNEL_DIR" log -5 \
+            --pretty=format:"- \`%h\` %s (%an)" --no-merges)
+
+          # Hitung durasi build untuk release notes
+          BUILD_DURATION_SEC=$(( BUILD_END - BUILD_START ))
+          BUILD_DURATION="${BUILD_DURATION_SEC}s"
+          if (( BUILD_DURATION_SEC >= 60 )); then
+            BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
+          fi
+
+          cat > "${GITHUB_WORKSPACE}/release_notes.md" << EOF
+          ## SuperPotato-${DATE_TAG}
+
+          ### Device
+          - **Target:** ${TARGET_DEVICE}
+
+          ### Last 5 Commits
+
+          ${COMMIT_LOG}
+
+          ### Build Info
+
+          | Key       | Value                    |
+          |-----------|--------------------------|
+          | Branch    | \`lineage-23.2\`         |
+          | Runner    | \`ubuntu-24.04\`         |
+          | Clang     | FoxeClang v23.0-20260822 |
+          | GCC ARM32 | FoxGCC v17.0-20260822    |
+          | Defconfig | \`${DEFCONFIG}\`         |
+          | Duration  | ${BUILD_DURATION}        |
+          | Size      | ${ZIP_SIZE}              |
+
+          ---
+          Built by [Michikoextv2](https://github.com/Michikoextv2)
+          EOF
+
+          # Export Telegram
+          echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------------------------
+      # 13. Upload kernel ZIP as artifact
+      # --------------------------------------------------------------------
+      - name: Upload kernel ZIP as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          retention-days: 7
+
+      # --------------------------------------------------------------------
+      # 14. Create GitHub Release
+      # --------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "SuperPotato-${{ env.DATE_TAG }}"
+          body_path: ${{ github.workspace }}/release_notes.md
+          files: ${{ env.ZIP_PATH }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --------------------------------------------------------------------
+      # 15. Send to Telegram
+      # --------------------------------------------------------------------
+      - name: Send to Telegram
+        if: ${{ github.event.inputs.send_telegram != 'false' }}
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          echo "Sending to Telegram..."
+          echo "Release URL : ${RELEASE_URL}"
+
+          python3 - <<'PYEOF'
+          import os, sys, requests
+
+          token     = os.environ["TG_BOT_TOKEN"]
+          chat_id   = os.environ["TG_CHAT_ID"]
+          thread_id = os.environ["TG_THREAD_ID"]
+          zip_path  = os.environ["ZIP_PATH"]
+
+          caption = (
+              "✅ Build Completed\n"
+              "\n"
+              "Device   : {TARGET_DEVICE}\n"
+              "Duration : {BUILD_DURATION}\n"
+              "Size     : {ZIP_SIZE}\n"
+              "Release  : {RELEASE_URL}"
+          ).format(
+              TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
+              BUILD_DURATION = os.environ["BUILD_DURATION"],
+              ZIP_SIZE       = os.environ["ZIP_SIZE"],
+              RELEASE_URL    = os.environ["RELEASE_URL"],
+          )
+
+          url = f"https://api.telegram.org/bot{token}/sendDocument"
+
+          with open(zip_path, "rb") as f:
+              resp = requests.post(
+                  url,
+                  data={
+                      "chat_id"           : chat_id,
+                      "message_thread_id" : thread_id,
+                      "caption"           : caption,
+                  },
+                  files={"document": (os.path.basename(zip_path), f, "application/zip")},
+                  timeout=300,
+              )
+
+          print(f"HTTP status : {resp.status_code}")
+          print(resp.text)
+
+          if resp.status_code != 200:
+              print(f"::error::Telegram API returned HTTP {resp.status_code}", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
+
+      # --------------------------------------------------------------------
+      # 16. Show ccache stats
+      # --------------------------------------------------------------------
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
