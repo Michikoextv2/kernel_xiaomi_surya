@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: Michiko Kernel Build
+name: SuperCreepy Kernel
 
 on:
   push:
