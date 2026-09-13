@@ -49,6 +49,7 @@ jobs:
       contents: write
 
     env:
+      TZ: Asia/Jakarta
       ARCH: arm64
       SUBARCH: arm64
       KBUILD_BUILD_HOST: xyz
@@ -62,8 +63,8 @@ jobs:
       KERNEL_NAME: SuperPotato
       TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
       DEFCONFIG: surya_defconfig
-      TG_CHAT_ID: "-1003988216382"
-      TG_THREAD_ID: "3"
+      TG_CHAT_ID: "-1003641667794"
+      TG_THREAD_ID: "360"
 
     steps:
       # --------------------------------------------------------------------
@@ -88,6 +89,19 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
+
+      # --------------------------------------------------------------
+      # 1.5 Checkout Misc
+      # --------------------------------------------------------------
+      - name: Implant NoMount
+        run: |
+          cd "$KERNEL_DIR"
+          curl https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
+
+        - name: Setup KernelSU
+          run: |
+          cd "$KERNEL_DIR"
+          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
       # --------------------------------------------------------------------
       # 2. Install build dependencies
@@ -169,7 +183,7 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-surya-${{ github.sha }}
           restore-keys: |
-            ccache-surya2-
+            ccache-surya-
             ccache-
 
       - name: Configure ccache
