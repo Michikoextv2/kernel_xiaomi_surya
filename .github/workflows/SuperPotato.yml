@@ -1,7 +1,7 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : lineage-23.2
+# Branch    : Potato
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
@@ -98,11 +98,11 @@ jobs:
           cd "$KERNEL_DIR"
           curl https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
 
-        - name: Setup KernelSU
-          run: |
+      - name: Setup KernelSU
+        run: |
           cd "$KERNEL_DIR"
-          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
+          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s mmain
+          
       # --------------------------------------------------------------------
       # 2. Install build dependencies
       # --------------------------------------------------------------------
