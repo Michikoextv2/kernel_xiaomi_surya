@@ -3,7 +3,7 @@
 # Target    : Poco X3 NFC (surya/karna)
 # Branch    : StagingCreepy
 # Runner    : ubuntu-24.04
-# Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
+# Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
 name: SuperCreepy Kernel
@@ -118,14 +118,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: foxe-clang-v23.0-20260822
+          key: foxe-clang-v18.1.8-20260916
 
       - name: Download and extract FoxeClang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$CLANG_DIR"
           curl -fSL --retry 3 -o foxe-clang.tar.zst \
-            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v23.0-20260822/FoxeClang-23.0-20260822.tar.zst"
+            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v18.1.8-20260916/FoxeClang-18.1.8-20260916.tar.zst"
           tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
             -C "$CLANG_DIR" --strip-components=1
           rm -f foxe-clang.tar.zst
@@ -306,7 +306,7 @@ jobs:
           fi
 
           cat > "${GITHUB_WORKSPACE}/release_notes.md" << EOF
-          ## SuperPotato-${DATE_TAG}
+          ## SuperCreepy-${DATE_TAG}
 
           ### Device
           - **Target:** ${TARGET_DEVICE}
@@ -321,7 +321,7 @@ jobs:
           |-----------|--------------------------|
           | Branch    | \`stagingcreepy\`        |
           | Runner    | \`ubuntu-24.04\`         |
-          | Clang     | FoxeClang v23.0-20260822 |
+          | Clang     | FoxeClang v18.1-20260916 |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
           | Defconfig | \`${DEFCONFIG}\`         |
           | Duration  | ${BUILD_DURATION}        |
