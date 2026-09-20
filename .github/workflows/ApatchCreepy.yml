@@ -7,7 +7,7 @@
 # Root      : FolkPatch (KernelPatch by LyraVoid)
 # ==============================================================================
 
-name: SuperCreepy-NonRoot
+name: SCreepy-Apatch
 
 on:
   push:
@@ -250,7 +250,7 @@ jobs:
           echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
 
       # --------------------------------------------------------------------
-      # 9.5. Apply FolkPatch (KernelPatch)
+      # 9.5. Apply FolkPatch (KernelPatch by LyraVoid)
       # --------------------------------------------------------------------
       - name: Apply FolkPatch (KernelPatch)
         env:
@@ -272,59 +272,73 @@ jobs:
             exit 1
           fi
 
-          # ── CO latest release FolkPatch ───────────────────────────
-          echo "[*] Fetching latest FolkPatch release..."
-          RELEASE_JSON=$(curl -fsSL \
+          # ── Ambil kptools + kpimg dari LyraVoid/KernelPatch ──────────
+          # FolkPatch adalah APK manager saja; kptools & kpimg
+          # didistribusikan melalui repo KernelPatch fork LyraVoid.
+          echo "[*] Fetching latest LyraVoid/KernelPatch release..."
+          KP_RELEASE=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest")
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/LyraVoid/KernelPatch/releases/latest")
 
-          FP_VERSION=$(echo "$RELEASE_JSON" | \
+          KP_VERSION=$(echo "$KP_RELEASE" | \
             python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
 
-          KPTOOLS_URL=$(echo "$RELEASE_JSON" | python3 -c "
+          # Ekstrak semua nama asset untuk debug
+          echo "[*] Available assets:"
+          echo "$KP_RELEASE" | python3 -c "
+          import sys, json
+          for a in json.load(sys.stdin)['assets']:
+              print(' -', a['name'])
+          "
+
+          # Ambil URL kptools-linux (fallback: nama apapun yang mengandung 'kptools')
+          KPTOOLS_URL=$(echo "$KP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
-          match = next((a['browser_download_url'] for a in assets
-                        if 'kptools-linux' in a['name']), None)
-          if not match:
-              raise SystemExit('kptools-linux not found in release assets')
-          print(match)
+          candidates = [a for a in assets
+                        if 'kptools' in a['name'].lower() and 'linux' in a['name'].lower()]
+          if not candidates:
+              candidates = [a for a in assets if 'kptools' in a['name'].lower()]
+          if not candidates:
+              raise SystemExit('::error::kptools tidak ditemukan di release assets')
+          print(candidates[0]['browser_download_url'])
           ")
 
-          KPIMG_URL=$(echo "$RELEASE_JSON" | python3 -c "
+          # Ambil URL kpimg-android (fallback: nama apapun yang mengandung 'kpimg')
+          KPIMG_URL=$(echo "$KP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
-          match = next((a['browser_download_url'] for a in assets
-                        if 'kpimg-android' in a['name']), None)
-          if not match:
-              raise SystemExit('kpimg-android not found in release assets')
-          print(match)
+          candidates = [a for a in assets
+                        if 'kpimg' in a['name'].lower() and 'android' in a['name'].lower()]
+          if not candidates:
+              candidates = [a for a in assets if 'kpimg' in a['name'].lower()]
+          if not candidates:
+              raise SystemExit('::error::kpimg tidak ditemukan di release assets')
+          print(candidates[0]['browser_download_url'])
           ")
 
-          echo "[*] FolkPatch  : $FP_VERSION"
-          echo "[*] kptools    : $KPTOOLS_URL"
-          echo "[*] kpimg      : $KPIMG_URL"
+          echo "[*] KernelPatch : $KP_VERSION"
+          echo "[*] kptools     : $KPTOOLS_URL"
+          echo "[*] kpimg       : $KPIMG_URL"
 
-          # ── Download tools ────────────────────────────────────────────
+          # ── Download tools ───────────────────────────────────────
           curl -fSL --retry 3 -o kptools "$KPTOOLS_URL"
           curl -fSL --retry 3 -o kpimg   "$KPIMG_URL"
           chmod +x kptools
 
-          echo "[*] kptools version : $(./kptools --version 2>&1 || true)"
-
-          # ── Decompress Image.gz → Image ───────────────────────────────
+          # ── Decompress Image.gz → Image ───────────────────────────
           echo "[*] Decompressing Image.gz..."
           gunzip -kf "$IMAGE_GZ"
-          # gunzip strips .gz → menghasilkan Image di direktori yang sama
 
           if [[ ! -f "$IMAGE_RAW" ]]; then
             echo "::error::Decompressed Image tidak ditemukan di $IMAGE_RAW"
             exit 1
           fi
-          echo "[*] Raw Image size : $(du -sh "$IMAGE_RAW" | cut -f1)"
+          echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
 
-          # ── Patch Image - KernelPatch ────────────────────────────
-          echo "[*] Patching raw Image dengan FolkPatch..."
+          # ── Patch Image dengan KernelPatch ─────────────────────────
+          echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
           ./kptools \
             --patch \
             --image   "$IMAGE_RAW" \
@@ -332,20 +346,20 @@ jobs:
             --skey    "$FOLKPATCH_SUPERKEY" \
             --out     "${IMAGE_RAW}.kp"
 
-          # ── Verifikasi patch ──────────────────────────────────────────
+          # ── Verifikasi patch ─────────────────────────────────────
           echo "[*] Verifikasi patch:"
           ./kptools --list --image "${IMAGE_RAW}.kp" || true
 
-          # ── Recompress → Image.gz ─────────────────────────────────────
+          # ── Recompress → Image.gz ────────────────────────────────
           echo "[*] Recompressing patched Image → Image.gz..."
           gzip -9 -c "${IMAGE_RAW}.kp" > "$IMAGE_GZ"
 
-          # ── Cleanup ───────────────────────────────────────────────────
+          # ── Cleanup ────────────────────────────────────────────
           rm -f "$IMAGE_RAW" "${IMAGE_RAW}.kp"
 
-          echo "FP_VERSION=${FP_VERSION}" >> "$GITHUB_ENV"
-          echo "[+] FolkPatch ${FP_VERSION} applied successfully!"
-          echo "[*] Final Image.gz size : $(du -sh "$IMAGE_GZ" | cut -f1)"
+          echo "FP_VERSION=${KP_VERSION}" >> "$GITHUB_ENV"
+          echo "[+] FolkPatch KernelPatch ${KP_VERSION} applied successfully!"
+          echo "[*] Final Image.gz : $(du -sh "$IMAGE_GZ" | cut -f1)"
 
       # --------------------------------------------------------------------
       # 10. Clone AnyKernel3
