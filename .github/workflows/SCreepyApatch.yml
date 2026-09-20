@@ -1,13 +1,13 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : StagingCreepy
+# Branch    : folkpatch
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # Root      : FolkPatch (kpimg extracted from official APK)
 # ==============================================================================
 
-name: SCreepy-Patch-Build
+name: SCreepy-NonKSU
 
 on:
   push:
@@ -253,8 +253,6 @@ jobs:
       # 9.5. Apply FolkPatch (kpimg from official FolkPatch APK)
       # --------------------------------------------------------------------
       - name: Apply FolkPatch (KernelPatch)
-        env:
-          FOLKPATCH_SUPERKEY: ${{ secrets.FOLKPATCH_SUPERKEY }}
         run: |
           set -euo pipefail
 
@@ -262,16 +260,6 @@ jobs:
           IMAGE_GZ="$BOOT_DIR/Image.gz"
           IMAGE_RAW="$BOOT_DIR/Image"
           IMAGE_PATCHED="${IMAGE_RAW}.kp"
-
-          # ── Validasi superkey ─────────────────────────────────────────
-          if [[ -z "${FOLKPATCH_SUPERKEY:-}" ]]; then
-            echo "::error::FOLKPATCH_SUPERKEY secret belum diset"
-            exit 1
-          fi
-          if [[ ${#FOLKPATCH_SUPERKEY} -lt 8 ]]; then
-            echo "::error::FOLKPATCH_SUPERKEY terlalu pendek (minimal 8 karakter)"
-            exit 1
-          fi
 
           # ── Download kptools dari LyraVoid/KernelPatch ────────────────
           # kptools hanya binary patcher, tidak diverifikasi signature-nya
@@ -353,7 +341,7 @@ jobs:
             --patch \
             --image   "$IMAGE_RAW" \
             --kpimg   kpimg \
-            --skey    "$FOLKPATCH_SUPERKEY" \
+            -S       "su" \
             --out     "$IMAGE_PATCHED"
 
           # ── Verifikasi patch ──────────────────────────────────────────
@@ -458,7 +446,7 @@ jobs:
 
           | Key        | Value                    |
           |------------|--------------------------|
-          | Branch     | \`stagingcreepy\`        |
+          | Branch     | \`apatch\`               |
           | Runner     | \`ubuntu-24.04\`         |
           | Clang      | FoxeClang v18.1-20260916 |
           | GCC ARM32  | FoxGCC v17.0-20260822    |
