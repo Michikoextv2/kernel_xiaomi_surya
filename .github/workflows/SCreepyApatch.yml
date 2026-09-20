@@ -1,10 +1,10 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : folkpatch
+# Branch    : apatch
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
-# Root      : FolkPatch (kpimg extracted from official APK)
+# Root      : FolkPatch
 # ==============================================================================
 
 name: SCreepy-NonKSU
@@ -288,7 +288,7 @@ jobs:
           curl -fSL --retry 3 -o kptools "$KPTOOLS_URL"
           chmod +x kptools
 
-          # ── Ekstrak kpimg dari APK FolkPatch resmi ────────────────────
+          # ── Ekstrak kpimg APK FolkPatch ────────────────────
           # kpimg HARUS dari APK FolkPatch agar signature cocok dengan manager
           echo "[*] Fetching FolkPatch APK untuk ekstrak kpimg..."
           FP_RELEASE=$(curl -fsSL \
@@ -335,8 +335,8 @@ jobs:
           fi
           echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
 
-          # ── Patch Image dengan KernelPatch ────────────────────────────
-          echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
+          # ── Patch Image -> KernelPatch ────────────────────────────
+          echo "[*] Patching raw Image -> FolkPatch KernelPatch..."
           ./kptools \
             --patch \
             --image   "$IMAGE_RAW" \
@@ -446,7 +446,7 @@ jobs:
 
           | Key        | Value                    |
           |------------|--------------------------|
-          | Branch     | \`apatch\`               |
+          | Branch     | \`folkpatch\`            |
           | Runner     | \`ubuntu-24.04\`         |
           | Clang      | FoxeClang v18.1-20260916 |
           | GCC ARM32  | FoxGCC v17.0-20260822    |
