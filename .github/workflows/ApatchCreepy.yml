@@ -1,7 +1,7 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : StagingCreepy
+# Branch    : apatch
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # Root      : FolkPatch (KernelPatch by LyraVoid)
@@ -248,7 +248,7 @@ jobs:
             exit 1
           fi
           echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
-
+          
       # --------------------------------------------------------------------
       # 9.5. Apply FolkPatch (KernelPatch by LyraVoid)
       # --------------------------------------------------------------------
@@ -273,8 +273,6 @@ jobs:
           fi
 
           # ── Ambil kptools + kpimg dari LyraVoid/KernelPatch ──────────
-          # FolkPatch adalah APK manager saja; kptools & kpimg
-          # didistribusikan melalui repo KernelPatch fork LyraVoid.
           echo "[*] Fetching latest LyraVoid/KernelPatch release..."
           KP_RELEASE=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
@@ -284,7 +282,6 @@ jobs:
           KP_VERSION=$(echo "$KP_RELEASE" | \
             python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
 
-          # Ekstrak semua nama asset untuk debug
           echo "[*] Available assets:"
           echo "$KP_RELEASE" | python3 -c "
           import sys, json
@@ -292,7 +289,6 @@ jobs:
               print(' -', a['name'])
           "
 
-          # Ambil URL kptools-linux (fallback: nama apapun yang mengandung 'kptools')
           KPTOOLS_URL=$(echo "$KP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
@@ -305,7 +301,6 @@ jobs:
           print(candidates[0]['browser_download_url'])
           ")
 
-          # Ambil URL kpimg-android (fallback: nama apapun yang mengandung 'kpimg')
           KPIMG_URL=$(echo "$KP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
@@ -327,34 +322,50 @@ jobs:
           curl -fSL --retry 3 -o kpimg   "$KPIMG_URL"
           chmod +x kptools
 
-          # ── Decompress Image.gz → Image ───────────────────────────
+          # ── Decompress Image.gz → Image (safe copy dulu) ──────────────
           echo "[*] Decompressing Image.gz..."
-          gunzip -kf "$IMAGE_GZ"
+          # Salin dulu agar Image.gz original aman jika ada error
+          cp "$IMAGE_GZ" "${IMAGE_GZ}.bak"
+          gunzip -f "$IMAGE_GZ"   # gunzip tanpa -k: hapus .gz, hasilkan Image
 
           if [[ ! -f "$IMAGE_RAW" ]]; then
             echo "::error::Decompressed Image tidak ditemukan di $IMAGE_RAW"
+            mv "${IMAGE_GZ}.bak" "$IMAGE_GZ"  # restore backup
             exit 1
           fi
           echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
+          rm -f "${IMAGE_GZ}.bak"
 
-          # ── Patch Image dengan KernelPatch ─────────────────────────
+          # ── Patch Image dengan KernelPatch ────────────────────────────
+          # FIX UTAMA: tambahkan --root-key agar root_superkey terisi
+          # Tanpa --root-key, root_superkey = 0x000... dan APK manager tidak bisa masuk
           echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
           ./kptools \
             --patch \
             --image   "$IMAGE_RAW" \
             --kpimg   kpimg \
             --skey    "$FOLKPATCH_SUPERKEY" \
+            --root-key "$FOLKPATCH_SUPERKEY" \
             --out     "${IMAGE_RAW}.kp"
 
-          # ── Verifikasi patch ─────────────────────────────────────
+          # ── Verifikasi patch ───────────────────────────────────────
           echo "[*] Verifikasi patch:"
           ./kptools --list --image "${IMAGE_RAW}.kp" || true
+
+          # ── Validasi root_superkey tidak all-zero ─────────────────────
+          VERIFY_OUT=$(./kptools --list --image "${IMAGE_RAW}.kp" 2>&1 || true)
+          if echo "$VERIFY_OUT" | grep -q "root_superkey=0000000000000000000000000000000000000000"; then
+            echo "::error::root_superkey masih all-zero! Patch tidak akan berfungsi."
+            echo "::error::Pastikan FOLKPATCH_SUPERKEY secret sudah diset dengan benar."
+            exit 1
+          fi
+          echo "[+] root_superkey terisi — patch valid"
 
           # ── Recompress → Image.gz ────────────────────────────────
           echo "[*] Recompressing patched Image → Image.gz..."
           gzip -9 -c "${IMAGE_RAW}.kp" > "$IMAGE_GZ"
 
-          # ── Cleanup ────────────────────────────────────────────
+          # ── Cleanup ─────────────────────────────────────────────
           rm -f "$IMAGE_RAW" "${IMAGE_RAW}.kp"
 
           echo "FP_VERSION=${KP_VERSION}" >> "$GITHUB_ENV"
@@ -463,7 +474,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "SuperPotato-${{ env.DATE_TAG }}"
+          name: "SuperCreepy-${{ env.DATE_TAG }}"
           body_path: ${{ github.workspace }}/release_notes.md
           files: ${{ env.ZIP_PATH }}
           draft: false
