@@ -4,7 +4,7 @@
 # Branch    : apatch
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
-# Root      : FolkPatch (KernelPatch by LyraVoid)
+# Root      : APatch (by bmax121)
 # ==============================================================================
 
 name: SCreepy-Apatch
@@ -250,11 +250,11 @@ jobs:
           echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
           
       # --------------------------------------------------------------------
-      # 9.5. Apply FolkPatch (KernelPatch by LyraVoid)
+      # 9.5. Apply APatch (by bmax121)
       # --------------------------------------------------------------------
-      - name: Apply FolkPatch (KernelPatch)
+      - name: Apply APatch
         env:
-          FOLKPATCH_SUPERKEY: ${{ secrets.FOLKPATCH_SUPERKEY }}
+          APATCH_SUPERKEY: ${{ secrets.APATCH_SUPERKEY }}
         run: |
           set -euo pipefail
 
@@ -263,64 +263,45 @@ jobs:
           IMAGE_RAW="$BOOT_DIR/Image"
 
           # ── Validasi superkey ─────────────────────────────────────────
-          if [[ -z "${FOLKPATCH_SUPERKEY:-}" ]]; then
-            echo "::error::FOLKPATCH_SUPERKEY secret belum diset"
+          if [[ -z "${APATCH_SUPERKEY:-}" ]]; then
+            echo "::error::APATCH_SUPERKEY secret belum diset"
             exit 1
           fi
-          if [[ ${#FOLKPATCH_SUPERKEY} -lt 8 ]]; then
-            echo "::error::FOLKPATCH_SUPERKEY terlalu pendek (minimal 8 karakter)"
+          if [[ ${#APATCH_SUPERKEY} -lt 8 ]]; then
+            echo "::error::APATCH_SUPERKEY terlalu pendek (minimal 8 karakter)"
             exit 1
           fi
 
-          # ── Ambil kptools + kpimg dari LyraVoid/KernelPatch ──────────
-          echo "[*] Fetching latest LyraVoid/KernelPatch release..."
-          KP_RELEASE=$(curl -fsSL \
+          # ── Ambil apd dari APatch latest release ──────────────────────
+          echo "[*] Fetching latest bmax121/APatch release..."
+          AP_RELEASE=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/LyraVoid/KernelPatch/releases/latest")
+            "https://api.github.com/repos/bmax121/APatch/releases/latest")
 
-          KP_VERSION=$(echo "$KP_RELEASE" | \
+          AP_VERSION=$(echo "$AP_RELEASE" | \
             python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
 
-          echo "[*] Available assets:"
-          echo "$KP_RELEASE" | python3 -c "
-          import sys, json
-          for a in json.load(sys.stdin)['assets']:
-              print(' -', a['name'])
-          "
-
-          KPTOOLS_URL=$(echo "$KP_RELEASE" | python3 -c "
+          APD_URL=$(echo "$AP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
-          candidates = [a for a in assets
-                        if 'kptools' in a['name'].lower() and 'linux' in a['name'].lower()]
+          candidates = [a for a in assets if a['name'] == 'apd']
           if not candidates:
-              candidates = [a for a in assets if 'kptools' in a['name'].lower()]
+              candidates = [a for a in assets
+                            if 'apd' in a['name'].lower() and 'linux' in a['name'].lower()]
           if not candidates:
-              raise SystemExit('::error::kptools tidak ditemukan di release assets')
+              candidates = [a for a in assets if a['name'].startswith('apd')]
+          if not candidates:
+              raise SystemExit('apd tidak ditemukan di release assets')
           print(candidates[0]['browser_download_url'])
           ")
 
-          KPIMG_URL=$(echo "$KP_RELEASE" | python3 -c "
-          import sys, json
-          assets = json.load(sys.stdin)['assets']
-          candidates = [a for a in assets
-                        if 'kpimg' in a['name'].lower() and 'android' in a['name'].lower()]
-          if not candidates:
-              candidates = [a for a in assets if 'kpimg' in a['name'].lower()]
-          if not candidates:
-              raise SystemExit('::error::kpimg tidak ditemukan di release assets')
-          print(candidates[0]['browser_download_url'])
-          ")
+          echo "[*] APatch  : $AP_VERSION"
+          echo "[*] apd url : $APD_URL"
 
-          echo "[*] KernelPatch : $KP_VERSION"
-          echo "[*] kptools     : $KPTOOLS_URL"
-          echo "[*] kpimg       : $KPIMG_URL"
-
-          # ── Download tools ────────────────────────────────────────────
-          curl -fSL --retry 3 -o kptools "$KPTOOLS_URL"
-          curl -fSL --retry 3 -o kpimg   "$KPIMG_URL"
-          chmod +x kptools
+          # ── Download apd ──────────────────────────────────────────────
+          curl -fSL --retry 3 -o apd "$APD_URL"
+          chmod +x apd
 
           # ── Decompress Image.gz → Image ───────────────────────────────
           echo "[*] Decompressing Image.gz..."
@@ -335,35 +316,32 @@ jobs:
           echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
           rm -f "${IMAGE_GZ}.bak"
 
-          # ── Patch Image dengan KernelPatch ────────────────────────────
-          echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
-          ./kptools \
-            --patch \
-            --image "$IMAGE_RAW" \
-            --kpimg kpimg \
-            --skey  "$FOLKPATCH_SUPERKEY" \
-            --out   "${IMAGE_RAW}.kp"
+          # ── Patch Image dengan APatch ─────────────────────────────────
+          echo "[*] Patching raw Image dengan APatch..."
+          ./apd patch \
+            -i "$IMAGE_RAW" \
+            -s "$APATCH_SUPERKEY" \
+            -o "${IMAGE_RAW}.ap"
 
           # ── Verifikasi patch ──────────────────────────────────────────
           echo "[*] Verifikasi patch:"
-          ./kptools --list --image "${IMAGE_RAW}.kp" || true
+          ./apd verify -i "${IMAGE_RAW}.ap" || true
 
-          VERIFY_OUT=$(./kptools --list --image "${IMAGE_RAW}.kp" 2>&1 || true)
-          if ! echo "$VERIFY_OUT" | grep -q "patched=true"; then
-            echo "::error::Patch gagal — patched=true tidak ditemukan"
+          if [[ ! -f "${IMAGE_RAW}.ap" ]]; then
+            echo "::error::Patch gagal — output file tidak ditemukan"
             exit 1
           fi
-          echo "[+] Patch valid — patched=true confirmed"
+          echo "[+] Patch valid — APatch applied successfully"
 
           # ── Recompress → Image.gz ─────────────────────────────────────
           echo "[*] Recompressing patched Image → Image.gz..."
-          gzip -9 -c "${IMAGE_RAW}.kp" > "$IMAGE_GZ"
+          gzip -9 -c "${IMAGE_RAW}.ap" > "$IMAGE_GZ"
 
           # ── Cleanup ───────────────────────────────────────────────────
-          rm -f "$IMAGE_RAW" "${IMAGE_RAW}.kp"
+          rm -f "$IMAGE_RAW" "${IMAGE_RAW}.ap"
 
-          echo "FP_VERSION=${KP_VERSION}" >> "$GITHUB_ENV"
-          echo "[+] FolkPatch KernelPatch ${KP_VERSION} applied successfully!"
+          echo "AP_VERSION=${AP_VERSION}" >> "$GITHUB_ENV"
+          echo "[+] APatch ${AP_VERSION} applied successfully!"
           echo "[*] Final Image.gz : $(du -sh "$IMAGE_GZ" | cut -f1)"
 
       # --------------------------------------------------------------------
@@ -441,7 +419,7 @@ jobs:
           | Clang      | FoxeClang v18.1-20260916 |
           | GCC ARM32  | FoxGCC v17.0-20260822    |
           | Defconfig  | \`${DEFCONFIG}\`         |
-          | FolkPatch  | \`${FP_VERSION}\`        |
+          | APatch     | \`${AP_VERSION}\`         |
           | Duration   | ${BUILD_DURATION}        |
           | Size       | ${ZIP_SIZE}              |
 
@@ -499,13 +477,13 @@ jobs:
               "✅ Build Completed\n"
               "\n"
               "Device     : {TARGET_DEVICE}\n"
-              "FolkPatch  : {FP_VERSION}\n"
+              "APatch     : {AP_VERSION}\n"
               "Duration   : {BUILD_DURATION}\n"
               "Size       : {ZIP_SIZE}\n"
               "Release    : {RELEASE_URL}"
           ).format(
               TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
-              FP_VERSION     = os.environ.get("FP_VERSION", "unknown"),
+              AP_VERSION     = os.environ.get("AP_VERSION", "unknown"),
               BUILD_DURATION = os.environ["BUILD_DURATION"],
               ZIP_SIZE       = os.environ["ZIP_SIZE"],
               RELEASE_URL    = os.environ["RELEASE_URL"],
