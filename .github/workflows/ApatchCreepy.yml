@@ -1,13 +1,13 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : apatch
+# Branch    : StagingCreepy
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
-# Root      : APatch (by bmax121)
+# Root      : FolkPatch (kpimg extracted from official APK)
 # ==============================================================================
 
-name: SCreepy-Apatch
+name: SuperCreepy Kernel
 
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FoxMiko-Labs/kernel_xiaomi_surya
-          ref: apatch
+          ref: stagingcreepy
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
@@ -248,100 +248,135 @@ jobs:
             exit 1
           fi
           echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
-          
+
       # --------------------------------------------------------------------
-      # 9.5. Apply APatch (by bmax121)
+      # 9.5. Apply FolkPatch (kpimg from official FolkPatch APK)
       # --------------------------------------------------------------------
-      - name: Apply APatch
+      - name: Apply FolkPatch (KernelPatch)
         env:
-          APATCH_SUPERKEY: ${{ secrets.APATCH_SUPERKEY }}
+          FOLKPATCH_SUPERKEY: ${{ secrets.FOLKPATCH_SUPERKEY }}
         run: |
           set -euo pipefail
 
           BOOT_DIR="$KERNEL_DIR/out/arch/arm64/boot"
           IMAGE_GZ="$BOOT_DIR/Image.gz"
           IMAGE_RAW="$BOOT_DIR/Image"
+          IMAGE_PATCHED="${IMAGE_RAW}.kp"
 
           # ── Validasi superkey ─────────────────────────────────────────
-          if [[ -z "${APATCH_SUPERKEY:-}" ]]; then
-            echo "::error::APATCH_SUPERKEY secret belum diset"
+          if [[ -z "${FOLKPATCH_SUPERKEY:-}" ]]; then
+            echo "::error::FOLKPATCH_SUPERKEY secret belum diset"
             exit 1
           fi
-          if [[ ${#APATCH_SUPERKEY} -lt 8 ]]; then
-            echo "::error::APATCH_SUPERKEY terlalu pendek (minimal 8 karakter)"
+          if [[ ${#FOLKPATCH_SUPERKEY} -lt 8 ]]; then
+            echo "::error::FOLKPATCH_SUPERKEY terlalu pendek (minimal 8 karakter)"
             exit 1
           fi
 
-          # ── Ambil apd dari APatch latest release ──────────────────────
-          echo "[*] Fetching latest bmax121/APatch release..."
-          AP_RELEASE=$(curl -fsSL \
+          # ── Download kptools dari LyraVoid/KernelPatch ────────────────
+          # kptools hanya binary patcher, tidak diverifikasi signature-nya
+          echo "[*] Fetching kptools dari LyraVoid/KernelPatch..."
+          KP_RELEASE=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/bmax121/APatch/releases/latest")
+            "https://api.github.com/repos/LyraVoid/KernelPatch/releases/latest")
 
-          AP_VERSION=$(echo "$AP_RELEASE" | \
+          KP_VERSION=$(echo "$KP_RELEASE" | \
             python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
 
-          APD_URL=$(echo "$AP_RELEASE" | python3 -c "
+          KPTOOLS_URL=$(echo "$KP_RELEASE" | python3 -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
-          candidates = [a for a in assets if a['name'] == 'apd']
+          candidates = [a for a in assets
+                        if 'kptools' in a['name'].lower() and 'linux' in a['name'].lower()]
           if not candidates:
-              candidates = [a for a in assets
-                            if 'apd' in a['name'].lower() and 'linux' in a['name'].lower()]
+              candidates = [a for a in assets if 'kptools' in a['name'].lower()]
           if not candidates:
-              candidates = [a for a in assets if a['name'].startswith('apd')]
-          if not candidates:
-              raise SystemExit('apd tidak ditemukan di release assets')
+              raise SystemExit('kptools tidak ditemukan di release assets')
           print(candidates[0]['browser_download_url'])
           ")
 
-          echo "[*] APatch  : $AP_VERSION"
-          echo "[*] apd url : $APD_URL"
+          echo "[*] kptools : $KPTOOLS_URL"
+          curl -fSL --retry 3 -o kptools "$KPTOOLS_URL"
+          chmod +x kptools
 
-          # ── Download apd ──────────────────────────────────────────────
-          curl -fSL --retry 3 -o apd "$APD_URL"
-          chmod +x apd
+          # ── Ekstrak kpimg dari APK FolkPatch resmi ────────────────────
+          # kpimg HARUS dari APK FolkPatch agar signature cocok dengan manager
+          echo "[*] Fetching FolkPatch APK untuk ekstrak kpimg..."
+          FP_RELEASE=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest")
+
+          FP_VERSION=$(echo "$FP_RELEASE" | \
+            python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+
+          FP_APK_URL=$(echo "$FP_RELEASE" | python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)['assets']
+          candidates = [a for a in assets if a['name'].lower().endswith('.apk')]
+          if not candidates:
+              raise SystemExit('APK FolkPatch tidak ditemukan di release assets')
+          print(candidates[0]['browser_download_url'])
+          ")
+
+          echo "[*] FolkPatch : $FP_VERSION"
+          echo "[*] APK URL   : $FP_APK_URL"
+
+          curl -fSL --retry 3 -o folkpatch.apk "$FP_APK_URL"
+
+          # Ekstrak kpimg dari assets/ dalam APK (APK = ZIP)
+          echo "[*] Mengekstrak kpimg dari APK FolkPatch..."
+          unzip -p folkpatch.apk assets/kpimg > kpimg
+          if [[ ! -s kpimg ]]; then
+            echo "::error::kpimg tidak ditemukan di dalam APK FolkPatch"
+            exit 1
+          fi
+          rm -f folkpatch.apk
+
+          echo "[*] kpimg size    : $(du -sh kpimg | cut -f1)"
+          echo "[*] kpimg header  : $(xxd kpimg | head -2)"
 
           # ── Decompress Image.gz → Image ───────────────────────────────
           echo "[*] Decompressing Image.gz..."
-          cp "$IMAGE_GZ" "${IMAGE_GZ}.bak"
-          gunzip -f "$IMAGE_GZ"
+          gunzip -kf "$IMAGE_GZ"
 
           if [[ ! -f "$IMAGE_RAW" ]]; then
             echo "::error::Decompressed Image tidak ditemukan di $IMAGE_RAW"
-            mv "${IMAGE_GZ}.bak" "$IMAGE_GZ"
             exit 1
           fi
           echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
-          rm -f "${IMAGE_GZ}.bak"
 
-          # ── Patch Image dengan APatch ─────────────────────────────────
-          echo "[*] Patching raw Image dengan APatch..."
-          ./apd patch \
-            -i "$IMAGE_RAW" \
-            -s "$APATCH_SUPERKEY" \
-            -o "${IMAGE_RAW}.ap"
+          # ── Patch Image dengan KernelPatch ────────────────────────────
+          echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
+          ./kptools \
+            --patch \
+            --image   "$IMAGE_RAW" \
+            --kpimg   kpimg \
+            --skey    "$FOLKPATCH_SUPERKEY" \
+            --out     "$IMAGE_PATCHED"
 
           # ── Verifikasi patch ──────────────────────────────────────────
           echo "[*] Verifikasi patch:"
-          ./apd verify -i "${IMAGE_RAW}.ap" || true
+          PATCH_INFO=$(./kptools --list --image "$IMAGE_PATCHED" 2>&1 || true)
+          echo "$PATCH_INFO"
 
-          if [[ ! -f "${IMAGE_RAW}.ap" ]]; then
-            echo "::error::Patch gagal — output file tidak ditemukan"
+          if ! echo "$PATCH_INFO" | grep -q "patched=true"; then
+            echo "::error::Verifikasi patch GAGAL - patched=true tidak ditemukan"
             exit 1
           fi
-          echo "[+] Patch valid — APatch applied successfully"
+          echo "[+] Patch verified: patched=true confirmed"
 
           # ── Recompress → Image.gz ─────────────────────────────────────
           echo "[*] Recompressing patched Image → Image.gz..."
-          gzip -9 -c "${IMAGE_RAW}.ap" > "$IMAGE_GZ"
+          rm -f "$IMAGE_GZ"
+          gzip -9 -c "$IMAGE_PATCHED" > "$IMAGE_GZ"
 
           # ── Cleanup ───────────────────────────────────────────────────
-          rm -f "$IMAGE_RAW" "${IMAGE_RAW}.ap"
+          rm -f "$IMAGE_RAW" "$IMAGE_PATCHED"
 
-          echo "AP_VERSION=${AP_VERSION}" >> "$GITHUB_ENV"
-          echo "[+] APatch ${AP_VERSION} applied successfully!"
+          echo "FP_VERSION=${FP_VERSION}" >> "$GITHUB_ENV"
+          echo "[+] FolkPatch ${FP_VERSION} (KernelPatch ${KP_VERSION}) applied!"
           echo "[*] Final Image.gz : $(du -sh "$IMAGE_GZ" | cut -f1)"
 
       # --------------------------------------------------------------------
@@ -364,15 +399,24 @@ jobs:
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
           echo "ZIP_PATH=${ZIP_PATH}" >> "$GITHUB_ENV"
 
+          mkdir -p "$AK3_DIR/kernels"
+
           for img in Image.gz dtb.img dtbo.img; do
             src="$KERNEL_DIR/out/arch/arm64/boot/$img"
             if [[ -f "$src" ]]; then
-              cp "$src" "$AK3_DIR/kernels"
-              echo "Copied : $img"
+              cp "$src" "$AK3_DIR/kernels/"
+              echo "Copied : $img ($(du -sh "$src" | cut -f1))"
             else
               echo "Skip   : $img (not found)"
             fi
           done
+
+          AK3_IMAGE="$AK3_DIR/kernels/Image.gz"
+          if [[ ! -f "$AK3_IMAGE" ]]; then
+            echo "::error::Image.gz tidak ditemukan di AK3/kernels/"
+            exit 1
+          fi
+          echo "[*] Image.gz in AK3 : $(du -sh "$AK3_IMAGE" | cut -f1)"
 
           (
             cd "$AK3_DIR"
@@ -414,12 +458,12 @@ jobs:
 
           | Key        | Value                    |
           |------------|--------------------------|
-          | Branch     | \`apatch\`        |
+          | Branch     | \`stagingcreepy\`        |
           | Runner     | \`ubuntu-24.04\`         |
           | Clang      | FoxeClang v18.1-20260916 |
           | GCC ARM32  | FoxGCC v17.0-20260822    |
           | Defconfig  | \`${DEFCONFIG}\`         |
-          | APatch     | \`${AP_VERSION}\`         |
+          | FolkPatch  | \`${FP_VERSION}\`        |
           | Duration   | ${BUILD_DURATION}        |
           | Size       | ${ZIP_SIZE}              |
 
@@ -446,7 +490,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "SuperCreepy-${{ env.DATE_TAG }}"
+          name: "SuperPotato-${{ env.DATE_TAG }}"
           body_path: ${{ github.workspace }}/release_notes.md
           files: ${{ env.ZIP_PATH }}
           draft: false
@@ -477,13 +521,13 @@ jobs:
               "✅ Build Completed\n"
               "\n"
               "Device     : {TARGET_DEVICE}\n"
-              "APatch     : {AP_VERSION}\n"
+              "FolkPatch  : {FP_VERSION}\n"
               "Duration   : {BUILD_DURATION}\n"
               "Size       : {ZIP_SIZE}\n"
               "Release    : {RELEASE_URL}"
           ).format(
               TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
-              AP_VERSION     = os.environ.get("AP_VERSION", "unknown"),
+              FP_VERSION     = os.environ.get("FP_VERSION", "unknown"),
               BUILD_DURATION = os.environ["BUILD_DURATION"],
               ZIP_SIZE       = os.environ["ZIP_SIZE"],
               RELEASE_URL    = os.environ["RELEASE_URL"],
