@@ -262,7 +262,7 @@ jobs:
           IMAGE_GZ="$BOOT_DIR/Image.gz"
           IMAGE_RAW="$BOOT_DIR/Image"
 
-          # ── Validasi superkey ──────────────────────────────────────
+          # ── Validasi superkey ─────────────────────────────────────────
           if [[ -z "${FOLKPATCH_SUPERKEY:-}" ]]; then
             echo "::error::FOLKPATCH_SUPERKEY secret belum diset"
             exit 1
@@ -317,60 +317,49 @@ jobs:
           echo "[*] kptools     : $KPTOOLS_URL"
           echo "[*] kpimg       : $KPIMG_URL"
 
-          # ── Download tools ───────────────────────────────────────
+          # ── Download tools ────────────────────────────────────────────
           curl -fSL --retry 3 -o kptools "$KPTOOLS_URL"
           curl -fSL --retry 3 -o kpimg   "$KPIMG_URL"
-          # Debug: lihat semua argumen yang didukung
-          echo "[*] kptools full help:"
-          ./kptools --help 2>&1 || true
-          echo "---"
-          ./kptools patch --help 2>&1 || true
           chmod +x kptools
 
-          # ── Decompress Image.gz → Image (safe copy dulu) ──────────────
+          # ── Decompress Image.gz → Image ───────────────────────────────
           echo "[*] Decompressing Image.gz..."
-          # Salin dulu agar Image.gz original aman jika ada error
           cp "$IMAGE_GZ" "${IMAGE_GZ}.bak"
-          gunzip -f "$IMAGE_GZ"   # gunzip tanpa -k: hapus .gz, hasilkan Image
+          gunzip -f "$IMAGE_GZ"
 
           if [[ ! -f "$IMAGE_RAW" ]]; then
-            echo "::error::Decompressed Image tidak ditemukan $IMAGE_RAW"
-            mv "${IMAGE_GZ}.bak" "$IMAGE_GZ"  # restore backup
+            echo "::error::Decompressed Image tidak ditemukan di $IMAGE_RAW"
+            mv "${IMAGE_GZ}.bak" "$IMAGE_GZ"
             exit 1
           fi
           echo "[*] Raw Image : $(du -sh "$IMAGE_RAW" | cut -f1)"
           rm -f "${IMAGE_GZ}.bak"
 
-          # ── Patch Image -> KernelPatch ────────────────────────────
-          # FIX UTAMA: tambahkan --root-key agar root_superkey terisi
-          # Tanpa --root-key, root_superkey = 0x000... dan APK manager tidak bisa masuk
+          # ── Patch Image dengan KernelPatch ────────────────────────────
           echo "[*] Patching raw Image dengan FolkPatch KernelPatch..."
           ./kptools \
             --patch \
-            --image   "$IMAGE_RAW" \
-            --kpimg   kpimg \
-            --skey    "$FOLKPATCH_SUPERKEY" \
-            --root-key "$FOLKPATCH_SUPERKEY" \
-            --out     "${IMAGE_RAW}.kp"
+            --image "$IMAGE_RAW" \
+            --kpimg kpimg \
+            --skey  "$FOLKPATCH_SUPERKEY" \
+            --out   "${IMAGE_RAW}.kp"
 
-          # ── Verifikasi patch ───────────────────────────────────────
+          # ── Verifikasi patch ──────────────────────────────────────────
           echo "[*] Verifikasi patch:"
           ./kptools --list --image "${IMAGE_RAW}.kp" || true
 
-          # ── Validasi root_superkey ─────────────────────
           VERIFY_OUT=$(./kptools --list --image "${IMAGE_RAW}.kp" 2>&1 || true)
-          if echo "$VERIFY_OUT" | grep -q "root_superkey=0000000000000000000000000000000000000000"; then
-            echo "::error::root_superkey masih all-zero! Patch tidak akan berfungsi."
-            echo "::error::Pastikan FOLKPATCH_SUPERKEY secret sudah diset dengan benar."
-          # exit 1
+          if ! echo "$VERIFY_OUT" | grep -q "patched=true"; then
+            echo "::error::Patch gagal — patched=true tidak ditemukan"
+            exit 1
           fi
-          echo "[+] root_superkey terisi — patch valid"
+          echo "[+] Patch valid — patched=true confirmed"
 
-          # ── Recompress → Image.gz ────────────────────────────────
+          # ── Recompress → Image.gz ─────────────────────────────────────
           echo "[*] Recompressing patched Image → Image.gz..."
           gzip -9 -c "${IMAGE_RAW}.kp" > "$IMAGE_GZ"
 
-          # ── Cleanup ─────────────────────────────────────────────
+          # ── Cleanup ───────────────────────────────────────────────────
           rm -f "$IMAGE_RAW" "${IMAGE_RAW}.kp"
 
           echo "FP_VERSION=${KP_VERSION}" >> "$GITHUB_ENV"
@@ -447,7 +436,7 @@ jobs:
 
           | Key        | Value                    |
           |------------|--------------------------|
-          | Branch     | \`stagingcreepy\`        |
+          | Branch     | \`apatch\`        |
           | Runner     | \`ubuntu-24.04\`         |
           | Clang      | FoxeClang v18.1-20260916 |
           | GCC ARM32  | FoxGCC v17.0-20260822    |
