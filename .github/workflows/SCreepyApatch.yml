@@ -7,7 +7,7 @@
 # Root      : FolkPatch (kpimg extracted from official APK)
 # ==============================================================================
 
-name: SuperCreepy Kernel
+name: SCreepy-Patch-Build
 
 on:
   push:
