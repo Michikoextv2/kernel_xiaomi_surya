@@ -86,7 +86,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FoxMiko-Labs/kernel_xiaomi_surya
-          ref: stagingcreepy
+          ref: apatch
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
