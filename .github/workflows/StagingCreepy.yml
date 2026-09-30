@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: SuperCreepy Kernel
+name: StagingCreepy Kernel
 
 on:
   push:
