@@ -101,7 +101,7 @@ jobs:
       - name: Setup KernelSU
         run: |
           cd "$KERNEL_DIR"
-          curl -LSs "https://raw.githubusercontent.com/FoxMiko-Labs/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s staging
+          curl -LSs "https://raw.githubusercontent.com/FoxMiko-Labs/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
       
       # --------------------------------------------------------------------
       # 2. Install build dependencies
