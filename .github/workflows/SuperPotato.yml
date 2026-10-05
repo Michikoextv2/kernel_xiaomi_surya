@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: SuperPotato Kernel
+name: SuperPotato Reborn
 
 on:
   push:
@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FoxMiko-Labs/kernel_xiaomi_surya
-          ref: potato
+          ref: potatonew
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
@@ -101,7 +101,7 @@ jobs:
       - name: Setup KernelSU
         run: |
           cd "$KERNEL_DIR"
-          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s mmain
+          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
           
       # --------------------------------------------------------------------
       # 2. Install build dependencies
