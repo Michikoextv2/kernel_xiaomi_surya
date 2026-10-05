@@ -1,7 +1,7 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : Potato
+# Branch    : LineageOS SM6150
 # Runner    : ubuntu-24.04
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
@@ -129,11 +129,11 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$CLANG_DIR"
-          curl -fSL --retry 3 -o foxe-clang.tar.zst \
-            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v23.0-20260822/FoxeClang-23.0-20260822.tar.zst"
+          curl -fSL --retry 3 -o SaturnClang.tar.zst \
+            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v22.1.8-20261005/SaturnClang-22.1.8-20261005.tar.zst"
           tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
             -C "$CLANG_DIR" --strip-components=1
-          rm -f foxe-clang.tar.zst
+          rm -f SaturnClang.tar.zst
 
       # --------------------------------------------------------------------
       # 4. Restore FoxGCC ARM32 cache
@@ -231,14 +231,14 @@ jobs:
             exit 1
           fi
 
-          # Catat waktu mulai build
+          # Time Start
           echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
 
           chmod +x "$KERNEL_DIR/buildci.sh"
           cd "$KERNEL_DIR"
           bash buildci.sh
 
-          # Catat waktu selesai build (hanya kompilasi, sebelum packaging)
+          # Time Keep
           echo "BUILD_END=$(date +%s)" >> "$GITHUB_ENV"
 
       # --------------------------------------------------------------------
@@ -326,7 +326,7 @@ jobs:
           |-----------|--------------------------|
           | Branch    | \`sm6150\`               |
           | Runner    | \`ubuntu-24.04\`         |
-          | Clang     | FoxeClang v23.0-20260822 |
+          | Clang     | SaturnClang v22.1.8.     |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
           | Defconfig | \`${DEFCONFIG}\`         |
           | Duration  | ${BUILD_DURATION}        |
