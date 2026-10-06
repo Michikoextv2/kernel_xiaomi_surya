@@ -3,7 +3,7 @@
 # Target    : Poco X3 NFC (surya/karna)
 # Branch    : sm8150
 # Runner    : ubuntu-24.04
-# Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
+# Toolchain : FoxeClang v23.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
 name: Supernova Kernel
@@ -131,7 +131,7 @@ jobs:
           mkdir -p "$CLANG_DIR"
           curl -fSL --retry 3 -o saturn-clang.tar.zst \
             "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v22.1.8-20261005/SaturnClang-22.1.8-20261005.tar.zst"
-          tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
+          tar --use-compress-program=zstd -xf saturn-clang.tar.zst \
             -C "$CLANG_DIR" --strip-components=1
           rm -f saturn-clang.tar.zst
 
