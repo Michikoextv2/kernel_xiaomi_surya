@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: StagingCreepy Kernel
+name: SuperCreepy Kernel
 
 on:
   push:
@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FoxMiko-Labs/kernel_xiaomi_surya
-          ref: apatch
+          ref: stagingcreepy
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
