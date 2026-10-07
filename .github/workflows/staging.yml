@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: Supernova Kernel
+name: Staging Kernel
 
 on:
   push:
