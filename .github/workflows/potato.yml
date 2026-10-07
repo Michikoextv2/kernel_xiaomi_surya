@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v23.0 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: SuperPotato Reborn
+name: SuperPotato Kernel
 
 on:
   push:
