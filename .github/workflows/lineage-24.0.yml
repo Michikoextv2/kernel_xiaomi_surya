@@ -98,10 +98,6 @@ jobs:
           cd "$KERNEL_DIR"
           curl https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
 
-      - name: Setup KernelSU
-        run: |
-          cd "$KERNEL_DIR"
-          curl -LSs "https://raw.githubusercontent.com/FoxMiko-Labs/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
       
       # --------------------------------------------------------------------
       # 2. Install build dependencies
