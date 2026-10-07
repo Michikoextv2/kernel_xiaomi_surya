@@ -1,9 +1,9 @@
 # ==============================================================================
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
-# Branch    : sm8150
+# Branch    : lineage-24.0
 # Runner    : ubuntu-24.04
-# Toolchain : FoxeClang v23.1.8 + FoxGCC ARM32 v17.0
+# Toolchain : FoxeClang v22.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
 name: Supernova Kernel
@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FoxMiko-Labs/kernel_xiaomi_surya
-          ref: sm8150
+          ref: lineage-24.0
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 5
           path: kernel-source
@@ -324,7 +324,7 @@ jobs:
 
           | Key       | Value                    |
           |-----------|--------------------------|
-          | Branch    | \`Lineage-sm8150\`       |
+          | Branch    | \`lineage-24.0\`         |
           | Runner    | \`ubuntu-24.04\`         |
           | Clang     | FoxeClang v22.1.8.       |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
