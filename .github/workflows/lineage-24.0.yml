@@ -3,7 +3,7 @@
 # Target    : Poco X3 NFC (surya/karna)
 # Branch    : lineage-24.0
 # Runner    : ubuntu-22.04
-# Toolchain : FoxeClang v22.1.8 + FoxGCC ARM32 v17.0
+# Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
 name: Supernova Kernel
@@ -106,12 +106,12 @@ jobs:
       # --------------------------------------------------------------------
       - name: Configure swap
         run: |
-          export SWAP_FILE=/swapfile
-          sudo fallocate -l 8G "$SWAP_FILE"
-          sudo chmod 600 "$SWAP_FILE"
-          sudo mkswap "$SWAP_FILE"
-          sudo swapon "$SWAP_FILE"
-          sudo sysctl vm.swappiness=10
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          sudo sysctl -w vm.swappiness=10
           echo "Swap total : $(free -h | awk '/^Swap:/ {print $2}')"
 
       # --------------------------------------------------------------------
@@ -134,17 +134,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: SaturnClang-22.1.8-20261005
+          key: FoxeClang-18.1.8-20260916
 
       - name: Download and extract FoxeClang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$CLANG_DIR"
-          curl -fSL --retry 3 -o saturn-clang.tar.zst \
-            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v22.1.8-20261005/SaturnClang-22.1.8-20261005.tar.zst"
-          tar --use-compress-program=zstd -xf saturn-clang.tar.zst \
+          curl -fSL --retry 3 -o foxe-clang.tar.zst \
+            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v18.1.8-20260916/FoxeClang-18.1.8-20260916.tar.zst"
+          tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
             -C "$CLANG_DIR" --strip-components=1
-          rm -f saturn-clang.tar.zst
+          rm -f foxe-clang.tar.zst
 
       # --------------------------------------------------------------------
       # 5. Restore FoxGCC ARM32 cache
@@ -221,26 +221,26 @@ jobs:
           RELEASE_TAG="${DATE_TAG}-${VARIANT_LABEL}"
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
 
-          echo "DATE_TAG=${DATE_TAG}"                 >> "$GITHUB_ENV"
-          echo "VARIANT_LABEL=${VARIANT_LABEL}"       >> "$GITHUB_ENV"
-          echo "VARIANT_DISPLAY=${VARIANT_DISPLAY}"   >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=${RELEASE_TAG}"           >> "$GITHUB_ENV"
-          echo "RELEASE_URL=${RELEASE_URL}"           >> "$GITHUB_ENV"
+          echo "DATE_TAG=${DATE_TAG}"               >> "$GITHUB_ENV"
+          echo "VARIANT_LABEL=${VARIANT_LABEL}"     >> "$GITHUB_ENV"
+          echo "VARIANT_DISPLAY=${VARIANT_DISPLAY}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}"         >> "$GITHUB_ENV"
+          echo "RELEASE_URL=${RELEASE_URL}"         >> "$GITHUB_ENV"
 
-          echo "Date tag        : ${DATE_TAG}"
-          echo "Variant         : ${VARIANT_DISPLAY}"
-          echo "Release tag     : ${RELEASE_TAG}"
-          echo "Release URL     : ${RELEASE_URL}"
+          echo "Date tag    : ${DATE_TAG}"
+          echo "Variant     : ${VARIANT_DISPLAY}"
+          echo "Release tag : ${RELEASE_TAG}"
+          echo "Release URL : ${RELEASE_URL}"
 
       # --------------------------------------------------------------------
       # 9. Build kernel
       # --------------------------------------------------------------------
       - name: Build kernel [${{ matrix.variant }}]
         run: |
-          echo "Device      : $TARGET_DEVICE"
-          echo "Defconfig   : $DEFCONFIG"
-          echo "Variant     : $VARIANT_DISPLAY"
-          echo "CPU cores   : $(nproc --all)"
+          echo "Device    : $TARGET_DEVICE"
+          echo "Defconfig : $DEFCONFIG"
+          echo "Variant   : $VARIANT_DISPLAY"
+          echo "CPU cores : $(nproc --all)"
 
           if [[ ! -f "$KERNEL_DIR/buildci.sh" ]]; then
             echo "::error::buildci.sh not found at $KERNEL_DIR"
@@ -324,7 +324,7 @@ jobs:
             BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
           fi
 
-          cat > "${GITHUB_WORKSPACE}/release_notes.md" << EOF
+          cat > "${GITHUB_WORKSPACE}/release_notes.md" << NOTES
           ## Supernova-${VARIANT_LABEL}-${DATE_TAG}
 
           ### Device
@@ -341,7 +341,7 @@ jobs:
           |-----------|--------------------------|
           | Branch    | \`lineage-24.0\`         |
           | Runner    | \`ubuntu-22.04\`         |
-          | Clang     | FoxeClang v22.1.8        |
+          | Clang     | FoxeClang v18.1.8        |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
           | Defconfig | \`${DEFCONFIG}\`         |
           | Variant   | ${VARIANT_DISPLAY}       |
@@ -351,7 +351,7 @@ jobs:
 
           ---
           Built by [Michikoextv2](https://github.com/Michikoextv2)
-          EOF
+          NOTES
 
           echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
 
