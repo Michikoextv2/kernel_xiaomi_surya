@@ -30,7 +30,7 @@ defaults:
 jobs:
   build:
     name: Build Kernel [${{ matrix.variant }}]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
 
     permissions:
@@ -209,6 +209,7 @@ jobs:
       - name: Resolve release tag
         run: |
           DATE_TAG=$(TZ=Asia/Jakarta date +%d%m%Y)
+          SHORT_SHA=$(git -C "$KERNEL_DIR" rev-parse --short=7 HEAD)
 
           if [[ "$ENABLE_KERNELSU" == "true" ]]; then
             VARIANT_LABEL="KSU"
@@ -218,16 +219,18 @@ jobs:
             VARIANT_DISPLAY="Non-KSU"
           fi
 
-          RELEASE_TAG="${DATE_TAG}-${VARIANT_LABEL}"
+          RELEASE_TAG="${DATE_TAG}-${SHORT_SHA}-${VARIANT_LABEL}"
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
 
           echo "DATE_TAG=${DATE_TAG}"               >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}"             >> "$GITHUB_ENV"
           echo "VARIANT_LABEL=${VARIANT_LABEL}"     >> "$GITHUB_ENV"
           echo "VARIANT_DISPLAY=${VARIANT_DISPLAY}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${RELEASE_TAG}"         >> "$GITHUB_ENV"
           echo "RELEASE_URL=${RELEASE_URL}"         >> "$GITHUB_ENV"
 
           echo "Date tag    : ${DATE_TAG}"
+          echo "Short SHA   : ${SHORT_SHA}"
           echo "Variant     : ${VARIANT_DISPLAY}"
           echo "Release tag : ${RELEASE_TAG}"
           echo "Release URL : ${RELEASE_URL}"
@@ -325,7 +328,7 @@ jobs:
           fi
 
           cat > "${GITHUB_WORKSPACE}/release_notes.md" << NOTES
-          ## Supernova-${VARIANT_LABEL}-${DATE_TAG}
+          ## Supernova-${VARIANT_LABEL}-${DATE_TAG}-${SHORT_SHA}
 
           ### Device
           - **Target:** ${TARGET_DEVICE}
@@ -372,7 +375,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "Supernova-${{ env.VARIANT_LABEL }}-${{ env.DATE_TAG }}"
+          name: "Supernova-${{ env.VARIANT_LABEL }}-${{ env.DATE_TAG }}-${{ env.SHORT_SHA }}"
           body_path: ${{ github.workspace }}/release_notes.md
           files: ${{ env.ZIP_PATH }}
           draft: false
@@ -390,31 +393,26 @@ jobs:
           python3 - <<'PYEOF'
           import os, sys, requests
 
-          token          = os.environ["TG_BOT_TOKEN"]
-          chat_id        = os.environ["TG_CHAT_ID"]
-          thread_id      = os.environ["TG_THREAD_ID"]
-          zip_path       = os.environ["ZIP_PATH"]
-          variant        = os.environ["VARIANT_DISPLAY"]
-          enable_ksu     = os.environ["ENABLE_KERNELSU"]
-
-          ksu_status = "Enabled" if enable_ksu == "true" else "Disabled"
+          token    = os.environ["TG_BOT_TOKEN"]
+          chat_id  = os.environ["TG_CHAT_ID"]
+          thread_id = os.environ["TG_THREAD_ID"]
+          zip_path = os.environ["ZIP_PATH"]
+          variant  = os.environ["VARIANT_DISPLAY"]
 
           caption = (
-              "Build Completed\n"
+              "✅Build Completed\n"
               "\n"
-              "Device    : {TARGET_DEVICE}\n"
-              "Variant   : {VARIANT}\n"
-              "KernelSU  : {KSU_STATUS}\n"
-              "Duration  : {BUILD_DURATION}\n"
-              "Size      : {ZIP_SIZE}\n"
-              "Release   : {RELEASE_URL}"
+              "Device      : {TARGET_DEVICE}\n"
+              "Variant     : {VARIANT}\n"
+              "Duration    : {BUILD_DURATION}\n"
+              "Size        : {ZIP_SIZE}\n"
+              "Release     : {RELEASE_URL}"
           ).format(
-              TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
-              VARIANT        = variant,
-              KSU_STATUS     = ksu_status,
-              BUILD_DURATION = os.environ["BUILD_DURATION"],
-              ZIP_SIZE       = os.environ["ZIP_SIZE"],
-              RELEASE_URL    = os.environ["RELEASE_URL"],
+              TARGET_DEVICE     = os.environ["TARGET_DEVICE"],
+              VARIANT           = variant,
+              BUILD_DURATION.   = os.environ["BUILD_DURATION"],
+              ZIP_SIZE          = os.environ["ZIP_SIZE"],
+              RELEASE_URL       = os.environ["RELEASE_URL"],
           )
 
           url = f"https://api.telegram.org/bot{token}/sendDocument"
