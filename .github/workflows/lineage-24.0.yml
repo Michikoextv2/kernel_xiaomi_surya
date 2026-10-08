@@ -2,7 +2,7 @@
 # Michiko Kernel - Automated Build Workflow
 # Target    : Poco X3 NFC (surya/karna)
 # Branch    : lineage-24.0
-# Runner    : ubuntu-24.04
+# Runner    : ubuntu-22.04
 # Toolchain : FoxeClang v22.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
@@ -15,21 +15,7 @@ on:
     paths-ignore:
       - "**.md"
       - ".gitignore"
-
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Custom release tag (leave empty for auto: DDMMYYYY)"
-        required: false
-        default: ""
-      send_telegram:
-        description: "Send ZIP to Telegram after build?"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
+      - ".github/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,12 +27,17 @@ defaults:
 
 jobs:
   build:
-    name: Build Kernel
-    runs-on: ubuntu-latest
+    name: Build Kernel [${{ matrix.variant }}]
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
 
     permissions:
       contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [NonKSU, KSU]
 
     env:
       TZ: Asia/Jakarta
@@ -63,6 +54,7 @@ jobs:
       KERNEL_NAME: Supernova
       TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
       DEFCONFIG: surya_defconfig
+      ENABLE_KERNELSU: ${{ matrix.variant == 'KSU' && 'true' || 'false' }}
       TG_CHAT_ID: "-1003641667794"
       TG_THREAD_ID: "7279"
 
@@ -90,17 +82,38 @@ jobs:
           fetch-depth: 5
           path: kernel-source
 
-      # --------------------------------------------------------------
-      # 1.5 Checkout Misc
-      # --------------------------------------------------------------
+      # --------------------------------------------------------------------
+      # 1.5. Implant NoMount
+      # --------------------------------------------------------------------
       - name: Implant NoMount
         run: |
           cd "$KERNEL_DIR"
-          curl https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
+          curl -fsSL https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
 
-      
       # --------------------------------------------------------------------
-      # 2. Install build dependencies
+      # 1.6. Setup KernelSU
+      # --------------------------------------------------------------------
+      - name: Setup KernelSU
+        if: env.ENABLE_KERNELSU == 'true'
+        run: |
+          cd "$KERNEL_DIR"
+          curl -LSs "https://raw.githubusercontent.com/FoxMiko-Labs/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+      # --------------------------------------------------------------------
+      # 2. Configure swap
+      # --------------------------------------------------------------------
+      - name: Configure swap
+        run: |
+          export SWAP_FILE=/swapfile
+          sudo fallocate -l 8G "$SWAP_FILE"
+          sudo chmod 600 "$SWAP_FILE"
+          sudo mkswap "$SWAP_FILE"
+          sudo swapon "$SWAP_FILE"
+          sudo sysctl vm.swappiness=10
+          echo "Swap total : $(free -h | awk '/^Swap:/ {print $2}')"
+
+      # --------------------------------------------------------------------
+      # 3. Install build dependencies
       # --------------------------------------------------------------------
       - name: Install build dependencies
         run: |
@@ -109,10 +122,10 @@ jobs:
             bc bison build-essential ca-certificates cpio curl \
             flex git jq libelf-dev libssl-dev \
             python3 python3-requests unzip xz-utils zstd ccache lz4 \
-            rsync flex dwarves make libdw-dev pkg-config device-tree-compiler
+            rsync dwarves make libdw-dev pkg-config device-tree-compiler
 
       # --------------------------------------------------------------------
-      # 3. Restore FoxeClang cache
+      # 4. Restore FoxeClang cache
       # --------------------------------------------------------------------
       - name: Restore FoxeClang cache
         id: cache-clang
@@ -132,7 +145,7 @@ jobs:
           rm -f saturn-clang.tar.zst
 
       # --------------------------------------------------------------------
-      # 4. Restore FoxGCC ARM32 cache
+      # 5. Restore FoxGCC ARM32 cache
       # --------------------------------------------------------------------
       - name: Restore FoxGCC ARM32 cache
         id: cache-gcc32
@@ -152,7 +165,7 @@ jobs:
           rm -f fox-gcc32.tar.zst
 
       # --------------------------------------------------------------------
-      # 5. Validate toolchains
+      # 6. Validate toolchains
       # --------------------------------------------------------------------
       - name: Validate toolchains
         run: |
@@ -171,14 +184,15 @@ jobs:
           fi
 
       # --------------------------------------------------------------------
-      # 6. Restore and configure ccache
+      # 7. Restore and configure ccache
       # --------------------------------------------------------------------
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-surya-${{ github.sha }}
+          key: ccache-surya-${{ matrix.variant }}-${{ github.sha }}
           restore-keys: |
+            ccache-surya-${{ matrix.variant }}-
             ccache-surya-
             ccache-
 
@@ -188,69 +202,72 @@ jobs:
           ccache --zero-stats
 
       # --------------------------------------------------------------------
-      # 7. Resolve release tag
+      # 8. Resolve release tag and variant metadata
       # --------------------------------------------------------------------
       - name: Resolve release tag
         run: |
-          CUSTOM_TAG="${{ github.event.inputs.release_tag }}"
           DATE_TAG=$(TZ=Asia/Jakarta date +%d%m%Y)
 
-          if [[ -n "$CUSTOM_TAG" ]]; then
-            RELEASE_TAG="$CUSTOM_TAG"
+          if [[ "$ENABLE_KERNELSU" == "true" ]]; then
+            VARIANT_LABEL="KSU"
+            VARIANT_DISPLAY="KernelSU"
           else
-            RELEASE_TAG="$DATE_TAG"
+            VARIANT_LABEL="NonKSU"
+            VARIANT_DISPLAY="Non-KSU"
           fi
 
+          RELEASE_TAG="${DATE_TAG}-${VARIANT_LABEL}"
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
 
-          echo "DATE_TAG=${DATE_TAG}"       >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
-          echo "RELEASE_URL=${RELEASE_URL}" >> "$GITHUB_ENV"
+          echo "DATE_TAG=${DATE_TAG}"                 >> "$GITHUB_ENV"
+          echo "VARIANT_LABEL=${VARIANT_LABEL}"       >> "$GITHUB_ENV"
+          echo "VARIANT_DISPLAY=${VARIANT_DISPLAY}"   >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}"           >> "$GITHUB_ENV"
+          echo "RELEASE_URL=${RELEASE_URL}"           >> "$GITHUB_ENV"
 
-          echo "Date tag    : ${DATE_TAG}"
-          echo "Release tag : ${RELEASE_TAG}"
-          echo "Release URL : ${RELEASE_URL}"
+          echo "Date tag        : ${DATE_TAG}"
+          echo "Variant         : ${VARIANT_DISPLAY}"
+          echo "Release tag     : ${RELEASE_TAG}"
+          echo "Release URL     : ${RELEASE_URL}"
 
       # --------------------------------------------------------------------
-      # 8. Build kernel
+      # 9. Build kernel
       # --------------------------------------------------------------------
-      - name: Build kernel
+      - name: Build kernel [${{ matrix.variant }}]
         run: |
-          echo "Device    : $TARGET_DEVICE"
-          echo "Defconfig : $DEFCONFIG"
-          echo "CPU cores : $(nproc --all)"
+          echo "Device      : $TARGET_DEVICE"
+          echo "Defconfig   : $DEFCONFIG"
+          echo "Variant     : $VARIANT_DISPLAY"
+          echo "CPU cores   : $(nproc --all)"
 
           if [[ ! -f "$KERNEL_DIR/buildci.sh" ]]; then
-            echo "::error::buildci.sh tidak ditemukan di $KERNEL_DIR"
-            echo "--- Isi direktori kernel-source ---"
+            echo "::error::buildci.sh not found at $KERNEL_DIR"
             ls -la "$KERNEL_DIR"
             exit 1
           fi
 
-          # Catat waktu mulai build
           echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
 
           chmod +x "$KERNEL_DIR/buildci.sh"
           cd "$KERNEL_DIR"
           bash buildci.sh
 
-          # Catat waktu selesai build (hanya kompilasi, sebelum packaging)
           echo "BUILD_END=$(date +%s)" >> "$GITHUB_ENV"
 
       # --------------------------------------------------------------------
-      # 9. Verify kernel output
+      # 10. Verify kernel output
       # --------------------------------------------------------------------
       - name: Verify kernel output
         run: |
           IMAGE="$KERNEL_DIR/out/arch/arm64/boot/Image.gz"
           if [[ ! -f "$IMAGE" ]]; then
-            echo "::error::Kernel image not found - build may have failed silently"
+            echo "::error::Kernel image not found — build may have failed silently"
             exit 1
           fi
           echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
 
       # --------------------------------------------------------------------
-      # 10. Clone AnyKernel3
+      # 11. Clone AnyKernel3
       # --------------------------------------------------------------------
       - name: Clone AnyKernel3
         run: |
@@ -259,11 +276,11 @@ jobs:
             -b snova "$AK3_DIR"
 
       # --------------------------------------------------------------------
-      # 11. Package kernel ZIP
+      # 12. Package kernel ZIP
       # --------------------------------------------------------------------
       - name: Package kernel ZIP
         run: |
-          ZIP_NAME="${KERNEL_NAME}-${DATE_TAG}.zip"
+          ZIP_NAME="${KERNEL_NAME}-${VARIANT_LABEL}-${DATE_TAG}.zip"
           ZIP_PATH="${GITHUB_WORKSPACE}/${ZIP_NAME}"
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
@@ -292,14 +309,13 @@ jobs:
           echo "Packaged : ${ZIP_NAME} (${ZIP_SIZE})"
 
       # --------------------------------------------------------------------
-      # 12. Generate release notes
+      # 13. Generate release notes
       # --------------------------------------------------------------------
       - name: Generate release notes
         run: |
           COMMIT_LOG=$(git -C "$KERNEL_DIR" log -5 \
             --pretty=format:"- \`%h\` %s (%an)" --no-merges)
 
-          # Hitung durasi build untuk release notes
           BUILD_DURATION_SEC=$(( BUILD_END - BUILD_START ))
           BUILD_DURATION="${BUILD_DURATION_SEC}s"
           if (( BUILD_DURATION_SEC >= 60 )); then
@@ -307,10 +323,11 @@ jobs:
           fi
 
           cat > "${GITHUB_WORKSPACE}/release_notes.md" << EOF
-          ## Supernova-${DATE_TAG}
+          ## Supernova-${VARIANT_LABEL}-${DATE_TAG}
 
           ### Device
           - **Target:** ${TARGET_DEVICE}
+          - **Variant:** ${VARIANT_DISPLAY}
 
           ### Last 5 Commits
 
@@ -321,10 +338,12 @@ jobs:
           | Key       | Value                    |
           |-----------|--------------------------|
           | Branch    | \`lineage-24.0\`         |
-          | Runner    | \`ubuntu-24.04\`         |
-          | Clang     | FoxeClang v22.1.8.       |
+          | Runner    | \`ubuntu-22.04\`         |
+          | Clang     | FoxeClang v22.1.8        |
           | GCC ARM32 | FoxGCC v17.0-20260822    |
           | Defconfig | \`${DEFCONFIG}\`         |
+          | Variant   | ${VARIANT_DISPLAY}       |
+          | KernelSU  | ${ENABLE_KERNELSU}       |
           | Duration  | ${BUILD_DURATION}        |
           | Size      | ${ZIP_SIZE}              |
 
@@ -332,11 +351,10 @@ jobs:
           Built by [Michikoextv2](https://github.com/Michikoextv2)
           EOF
 
-          # Export Telegram
           echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
 
       # --------------------------------------------------------------------
-      # 13. Upload kernel ZIP as artifact
+      # 14. Upload kernel ZIP as artifact
       # --------------------------------------------------------------------
       - name: Upload kernel ZIP as artifact
         uses: actions/upload-artifact@v4
@@ -346,13 +364,13 @@ jobs:
           retention-days: 7
 
       # --------------------------------------------------------------------
-      # 14. Create GitHub Release
+      # 15. Create GitHub Release
       # --------------------------------------------------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "Supernova-${{ env.DATE_TAG }}"
+          name: "Supernova-${{ env.VARIANT_LABEL }}-${{ env.DATE_TAG }}"
           body_path: ${{ github.workspace }}/release_notes.md
           files: ${{ env.ZIP_PATH }}
           draft: false
@@ -361,33 +379,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # --------------------------------------------------------------------
-      # 15. Send to Telegram
+      # 16. Send to Telegram
       # --------------------------------------------------------------------
       - name: Send to Telegram
-        if: ${{ github.event.inputs.send_telegram != 'false' }}
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          echo "Sending to Telegram..."
-          echo "Release URL : ${RELEASE_URL}"
-
           python3 - <<'PYEOF'
           import os, sys, requests
 
-          token     = os.environ["TG_BOT_TOKEN"]
-          chat_id   = os.environ["TG_CHAT_ID"]
-          thread_id = os.environ["TG_THREAD_ID"]
-          zip_path  = os.environ["ZIP_PATH"]
+          token          = os.environ["TG_BOT_TOKEN"]
+          chat_id        = os.environ["TG_CHAT_ID"]
+          thread_id      = os.environ["TG_THREAD_ID"]
+          zip_path       = os.environ["ZIP_PATH"]
+          variant        = os.environ["VARIANT_DISPLAY"]
+          enable_ksu     = os.environ["ENABLE_KERNELSU"]
+
+          ksu_status = "Enabled" if enable_ksu == "true" else "Disabled"
 
           caption = (
-              "✅ Build Completed\n"
+              "Build Completed\n"
               "\n"
-              "Device   : {TARGET_DEVICE}\n"
-              "Duration : {BUILD_DURATION}\n"
-              "Size     : {ZIP_SIZE}\n"
-              "Release  : {RELEASE_URL}"
+              "Device    : {TARGET_DEVICE}\n"
+              "Variant   : {VARIANT}\n"
+              "KernelSU  : {KSU_STATUS}\n"
+              "Duration  : {BUILD_DURATION}\n"
+              "Size      : {ZIP_SIZE}\n"
+              "Release   : {RELEASE_URL}"
           ).format(
               TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
+              VARIANT        = variant,
+              KSU_STATUS     = ksu_status,
               BUILD_DURATION = os.environ["BUILD_DURATION"],
               ZIP_SIZE       = os.environ["ZIP_SIZE"],
               RELEASE_URL    = os.environ["RELEASE_URL"],
@@ -416,7 +438,7 @@ jobs:
           PYEOF
 
       # --------------------------------------------------------------------
-      # 16. Show ccache stats
+      # 17. Show ccache stats
       # --------------------------------------------------------------------
       - name: Show ccache stats
         if: always()
