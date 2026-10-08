@@ -400,19 +400,19 @@ jobs:
           variant  = os.environ["VARIANT_DISPLAY"]
 
           caption = (
-              "✅Build Completed\n"
+              "Build Completed\n"
               "\n"
-              "Device      : {TARGET_DEVICE}\n"
-              "Variant     : {VARIANT}\n"
-              "Duration    : {BUILD_DURATION}\n"
-              "Size        : {ZIP_SIZE}\n"
-              "Release     : {RELEASE_URL}"
+              "Device   : {TARGET_DEVICE}\n"
+              "Variant  : {VARIANT}\n"
+              "Duration : {BUILD_DURATION}\n"
+              "Size     : {ZIP_SIZE}\n"
+              "Release  : {RELEASE_URL}"
           ).format(
-              TARGET_DEVICE     = os.environ["TARGET_DEVICE"],
-              VARIANT           = variant,
-              BUILD_DURATION.   = os.environ["BUILD_DURATION"],
-              ZIP_SIZE          = os.environ["ZIP_SIZE"],
-              RELEASE_URL       = os.environ["RELEASE_URL"],
+              TARGET_DEVICE  = os.environ["TARGET_DEVICE"],
+              VARIANT        = variant,
+              BUILD_DURATION = os.environ["BUILD_DURATION"],
+              ZIP_SIZE       = os.environ["ZIP_SIZE"],
+              RELEASE_URL    = os.environ["RELEASE_URL"],
           )
 
           url = f"https://api.telegram.org/bot{token}/sendDocument"
