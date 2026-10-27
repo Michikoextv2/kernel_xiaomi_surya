@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: Supernova Kernel
+name: Test Kernel
 
 on:
   push:
@@ -59,6 +59,7 @@ jobs:
       ENABLE_KERNELSU: ${{ matrix.variant == 'KSU' && 'true' || 'false' }}
       TG_CHAT_ID: "-1003641667794"
       TG_THREAD_ID: "7279"
+      VARIANT_LABEL: ${{ matrix.variant }}
 
     steps:
       # --------------------------------------------------------------------
@@ -96,32 +97,26 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
           thread_id = os.environ["TG_THREAD_ID"]
-          variant   = os.environ["MATRIX_VARIANT"]
-          run_url   = "https://github.com/{repo}/actions/runs/{run_id}".format(
-              repo   = os.environ["GITHUB_REPOSITORY"],
-              run_id = os.environ["GITHUB_RUN_ID"],
-          )
+          variant   = os.environ["VARIANT_LABEL"]
+          run_url   = os.environ["RUN_URL"]
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
               data={
                   "chat_id"           : chat_id,
                   "message_thread_id" : thread_id,
-                  "text"              : (
-                      "[{variant}] Build started\n"
-                      "NoMount: implanted\n"
-                      "Actions: {url}"
-                  ).format(variant=variant, url=run_url),
+                  "text"              : f"[{variant}] Build started\nNoMount: implanted\nActions: {run_url}",
               },
               timeout=30,
           )
           PYEOF
         env:
-          MATRIX_VARIANT: ${{ matrix.variant }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # --------------------------------------------------------------------
       # 1.6. Setup KernelSU
@@ -137,7 +132,7 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
+          python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
@@ -182,24 +177,22 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
+          python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
           thread_id = os.environ["TG_THREAD_ID"]
-          variant   = os.environ["MATRIX_VARIANT"]
+          variant   = os.environ["VARIANT_LABEL"]
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
               data={
                   "chat_id"           : chat_id,
                   "message_thread_id" : thread_id,
-                  "text"              : "[{variant}] Dependencies: installed".format(variant=variant),
+                  "text"              : f"[{variant}] Dependencies: installed",
               },
               timeout=30,
           )
           PYEOF
-        env:
-          MATRIX_VARIANT: ${{ matrix.variant }}
 
       # --------------------------------------------------------------------
       # 4. Restore FoxeClang cache
@@ -251,7 +244,9 @@ jobs:
             echo "::error::clang not found at $CLANG_DIR/bin/clang"
             exit 1
           fi
-          echo "Clang  : $("$CLANG_DIR/bin/clang" --version | head -n1)"
+          CLANG_VERSION="$("$CLANG_DIR/bin/clang" --version | head -n1)"
+          echo "Clang  : ${CLANG_VERSION}"
+          echo "CLANG_VERSION=${CLANG_VERSION}" >> "$GITHUB_ENV"
 
           GCC32_BIN=$(find "$GCC32_DIR" -name "arm-eabi-gcc" -type f | head -1)
           if [[ -z "$GCC32_BIN" ]]; then
@@ -264,32 +259,23 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
-          import os, subprocess, requests
+          python3 - <<PYEOF
+          import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
           thread_id = os.environ["TG_THREAD_ID"]
-          variant   = os.environ["MATRIX_VARIANT"]
-          clang_dir = os.environ["CLANG_DIR"]
-          clang_ver = subprocess.check_output(
-              [f"{clang_dir}/bin/clang", "--version"],
-              text=True,
-          ).splitlines()[0]
+          variant   = os.environ["VARIANT_LABEL"]
+          clang_ver = os.environ.get("CLANG_VERSION", "unknown")
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
               data={
                   "chat_id"           : chat_id,
                   "message_thread_id" : thread_id,
-                  "text"              : (
-                      "[{variant}] Toolchains: ready\n"
-                      "Clang: {clang}"
-                  ).format(variant=variant, clang=clang_ver),
+                  "text"              : f"[{variant}] Toolchains: ready\nClang: {clang_ver}",
               },
               timeout=30,
           )
           PYEOF
-        env:
-          MATRIX_VARIANT: ${{ matrix.variant }}
 
       # --------------------------------------------------------------------
       # 7. Restore and configure ccache
@@ -318,7 +304,6 @@ jobs:
           SHORT_SHA=$(git -C "$KERNEL_DIR" rev-parse --short=7 HEAD)
 
           if [[ "$ENABLE_KERNELSU" == "true" ]]; then
-            VARIANT_LABEL="KSU"
             VARIANT_DISPLAY="KernelSU"
           else
             VARIANT_LABEL="NonKSU"
@@ -344,11 +329,11 @@ jobs:
       # --------------------------------------------------------------------
       # 9. Build kernel
       # --------------------------------------------------------------------
-      - name: Notify — build started
+      - name: Notify — build in progress
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
+          python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
@@ -356,32 +341,26 @@ jobs:
           variant   = os.environ["VARIANT_DISPLAY"]
           device    = os.environ["TARGET_DEVICE"]
           defconfig = os.environ["DEFCONFIG"]
-          run_url   = "https://github.com/{repo}/actions/runs/{run_id}".format(
-              repo   = os.environ["GITHUB_REPOSITORY"],
-              run_id = os.environ["GITHUB_RUN_ID"],
-          )
+          run_url   = os.environ["RUN_URL"]
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
               data={
                   "chat_id"           : chat_id,
                   "message_thread_id" : thread_id,
                   "text"              : (
-                      "Build in progress\n"
-                      "\n"
-                      "Device    : {device}\n"
-                      "Variant   : {variant}\n"
-                      "Defconfig : {defconfig}\n"
-                      "Actions   : {url}"
-                  ).format(
-                      device    = device,
-                      variant   = variant,
-                      defconfig = defconfig,
-                      url       = run_url,
+                      f"Build in progress\n"
+                      f"\n"
+                      f"Device    : {device}\n"
+                      f"Variant   : {variant}\n"
+                      f"Defconfig : {defconfig}\n"
+                      f"Actions   : {run_url}"
                   ),
               },
               timeout=30,
           )
           PYEOF
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Build kernel [${{ matrix.variant }}]
         run: |
@@ -420,7 +399,7 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          python3 - <<'PYEOF'
+          python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
           chat_id   = os.environ["TG_CHAT_ID"]
@@ -431,7 +410,7 @@ jobs:
               data={
                   "chat_id"           : chat_id,
                   "message_thread_id" : thread_id,
-                  "text"              : "[{variant}] Kernel: compiled — packaging...".format(variant=variant),
+                  "text"              : f"[{variant}] Kernel: compiled — packaging...",
               },
               timeout=30,
           )
@@ -484,50 +463,53 @@ jobs:
       # --------------------------------------------------------------------
       - name: Generate release notes
         run: |
-          COMMIT_LOG=$(git -C "$KERNEL_DIR" log -5 \
-            --pretty=format:"- \`%h\` %s (%an)" --no-merges)
-
           BUILD_DURATION_SEC=$(( BUILD_END - BUILD_START ))
           BUILD_DURATION="${BUILD_DURATION_SEC}s"
           if (( BUILD_DURATION_SEC >= 60 )); then
             BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
           fi
+          echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
 
-          cat > "${GITHUB_WORKSPACE}/release_notes.md" << 'NOTES'
-          ## Supernova-${VARIANT_LABEL}-${DATE_TAG}-${SHORT_SHA}
+          COMMIT_LOG=$(git -C "$KERNEL_DIR" log -5 \
+            --pretty=format:"- \`%h\` %s (%an)" --no-merges)
 
-          ### Device
-          - **Target:** ${TARGET_DEVICE}
-          - **Variant:** ${VARIANT_DISPLAY}
-
-          ### Last 5 Commits
-
-          ${COMMIT_LOG}
-
-          ### Build Info
-
-          | Key       | Value                    |
-          |-----------|--------------------------|
-          | Branch    | `lineage-24.0`           |
-          | Runner    | `ubuntu-24.04`           |
-          | Clang     | FoxeClang v18.1.8        |
-          | GCC ARM32 | FoxGCC v17.0-20260822    |
-          | Defconfig | `${DEFCONFIG}`           |
-          | Variant   | ${VARIANT_DISPLAY}       |
-          | KernelSU  | ${ENABLE_KERNELSU}       |
-          | Duration  | ${BUILD_DURATION}        |
-          | Size      | ${ZIP_SIZE}              |
-
-          ---
-
-          ### Supported KSU Manager (KSU variant only)
-
-          Choose one of the following managers:
-
-          | Manager     | Link                                                              |
-          |-------------|-------------------------------------------------------------------|
-          | KSU Official | [Telegram](https://t.me/KernelSU_group/3234)                   |
-          | KernelSU-Next | [Telegram](https://t.me/ksunext_ci)                           |
-          | KowSU        | [Telegram](https://t.me/kowsu_build)                          |
-          | MamboSU      | [Telegram](https://t.me/WebsArch)                             |
-     
+          # Write release notes with direct variable expansion (no heredoc quoting issues)
+          {
+            echo "## Supernova-${VARIANT_LABEL}-${DATE_TAG}-${SHORT_SHA}"
+            echo ""
+            echo "### Device"
+            echo "- **Target:** ${TARGET_DEVICE}"
+            echo "- **Variant:** ${VARIANT_DISPLAY}"
+            echo ""
+            echo "### Last 5 Commits"
+            echo ""
+            echo "${COMMIT_LOG}"
+            echo ""
+            echo "### Build Info"
+            echo ""
+            echo "| Key       | Value                    |"
+            echo "|-----------|--------------------------|"
+            echo "| Branch    | \`lineage-24.0\`         |"
+            echo "| Runner    | \`ubuntu-24.04\`         |"
+            echo "| Clang     | FoxeClang v18.1.8        |"
+            echo "| GCC ARM32 | FoxGCC v17.0-20260822    |"
+            echo "| Defconfig | \`${DEFCONFIG}\`         |"
+            echo "| Variant   | ${VARIANT_DISPLAY}       |"
+            echo "| KernelSU  | ${ENABLE_KERNELSU}       |"
+            echo "| Duration  | ${BUILD_DURATION}        |"
+            echo "| Size      | ${ZIP_SIZE}              |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Supported KSU Manager (KSU variant only)"
+            echo ""
+            echo "Choose one of the following managers:"
+            echo ""
+            echo "| Manager        | Link                                                           |"
+            echo "|----------------|----------------------------------------------------------------|"
+            echo "| KSU Official   | [Telegram](https://t.me/KernelSU_group/3234)                   |"
+            echo "| KernelSU-Next  | [Telegram](https://t.me/ksunext_ci)                            |"
+            echo "| KowSU          | [Telegram](https://t.me/kowsu_build)                           |"
+            echo "| MamboSU        | [Telegram](https://t.me/WebsArch)                              |"
+            echo "| xxKSU          | [GitHub](https://github.com/backslashxx/KernelSU/releases)     |"
+            echo "| BakaSU         | [Telegram](https://t.me/BakaSU
