@@ -6,7 +6,7 @@
 # Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
 # ==============================================================================
 
-name: Test Kernel
+name: Supernova Kernel
 
 on:
   push:
@@ -115,8 +115,6 @@ jobs:
               timeout=30,
           )
           PYEOF
-        env:
-          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # --------------------------------------------------------------------
       # 1.6. Setup KernelSU
@@ -125,7 +123,7 @@ jobs:
         if: env.ENABLE_KERNELSU == 'true'
         run: |
           cd "$KERNEL_DIR"
-          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          curl -LSs "https://raw.githubusercontent.com/FoxMiko-Labs/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
       - name: Notify — KernelSU configured
         if: env.ENABLE_KERNELSU == 'true'
@@ -333,6 +331,7 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           python3 - <<PYEOF
           import os, requests
           token     = os.environ["TG_BOT_TOKEN"]
@@ -359,8 +358,6 @@ jobs:
               timeout=30,
           )
           PYEOF
-        env:
-          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Build kernel [${{ matrix.variant }}]
         run: |
@@ -512,4 +509,5 @@ jobs:
             echo "| KowSU          | [Telegram](https://t.me/kowsu_build)                           |"
             echo "| MamboSU        | [Telegram](https://t.me/WebsArch)                              |"
             echo "| xxKSU          | [GitHub](https://github.com/backslashxx/KernelSU/releases)     |"
-            echo "| BakaSU         | [Telegram](https://t.me/BakaSU
+            echo "| BakaSU         | [Telegram](https://t.me/BakaSU_Grp/4)                          |"
+            echo "| midoriSU       | [GitHub](https://github.com/midori01/KernelSU/releases)  
