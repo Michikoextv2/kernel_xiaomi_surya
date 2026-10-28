@@ -39,31 +39,54 @@ jobs:
     outputs:
       msg_id: ${{ steps.send.outputs.msg_id }}
 
+    env:
+      TG_CHAT_ID: "-1003641667794"
+      TG_THREAD_ID: "7279"
+
     steps:
       - name: Send build started notification
         id: send
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: "-1003641667794"
-          TG_THREAD_ID: "7279"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG_ID=$(python3 - << 'PYEOF'
+          import os, requests
 
-          TEXT="🔨 Supernova Kernel — Build Started
+          token      = os.environ["TG_BOT_TOKEN"]
+          chat_id    = os.environ["TG_CHAT_ID"]
+          thread_id  = os.environ["TG_THREAD_ID"]
+          repo       = os.environ["GITHUB_REPOSITORY"]
+          run_id     = os.environ["GITHUB_RUN_ID"]
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          run_url    = "https://github.com/" + repo + "/actions/runs/" + run_id
 
-Device  : POCO X3 NFC (surya/karna)
-Variant : NonKSU + KernelSU (parallel)
-Trigger : ${{ github.event_name }}
-Actions : ${RUN_URL}"
+          text = (
+              "Supernova Kernel - Build Started\n"
+              "\n"
+              "Device  : POCO X3 NFC (surya/karna)\n"
+              "Variant : NonKSU + KernelSU (parallel)\n"
+              "Trigger : " + event_name + "\n"
+              "Actions : " + run_url
+          )
 
-          RESP=$(curl -s -X POST \
-            "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "message_thread_id=${TG_THREAD_ID}" \
-            --data-urlencode "text=${TEXT}" \
-            --max-time 30)
+          resp   = requests.post(
+              "https://api.telegram.org/bot" + token + "/sendMessage",
+              data={
+                  "chat_id"           : chat_id,
+                  "message_thread_id" : thread_id,
+                  "text"              : text,
+              },
+              timeout=30,
+          )
+          result = resp.json()
+          if result.get("ok"):
+              print(result["result"]["message_id"])
+          PYEOF
+          )
 
-          MSG_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['message_id'])" 2>/dev/null || echo "")
           echo "msg_id=${MSG_ID}" >> "$GITHUB_OUTPUT"
           echo "Sent message_id: ${MSG_ID}"
 
@@ -82,8 +105,8 @@ Actions : ${RUN_URL}"
         variant: [NonKSU, KSU]
 
     outputs:
-      date_tag:   ${{ steps.meta.outputs.date_tag }}
-      short_sha:  ${{ steps.meta.outputs.short_sha }}
+      date_tag:  ${{ steps.meta.outputs.date_tag }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
 
     env:
       TZ: Asia/Jakarta
@@ -102,10 +125,11 @@ Actions : ${RUN_URL}"
       DEFCONFIG: surya_defconfig
       ENABLE_KERNELSU: ${{ matrix.variant == 'KSU' && 'true' || 'false' }}
       VARIANT_LABEL: ${{ matrix.variant }}
+      TG_CHAT_ID: "-1003641667794"
 
     steps:
       # --------------------------------------------------------------------
-      # 0. Inject GH_PAT
+      # 0. Configure git credentials
       # --------------------------------------------------------------------
       - name: Configure git credentials
         run: |
@@ -349,7 +373,6 @@ Actions : ${RUN_URL}"
             BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
           fi
           echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
-
           echo "Packaged : ${ZIP_NAME} (${ZIP_SIZE})"
 
       # --------------------------------------------------------------------
@@ -371,35 +394,50 @@ Actions : ${RUN_URL}"
 
       # --------------------------------------------------------------------
       # 15. Edit pesan Telegram jika build gagal
-      #     Hanya edit pesan yang sudah ada — tidak kirim pesan baru
       # --------------------------------------------------------------------
       - name: Notify build failed
         if: failure()
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: "-1003641667794"
           MSG_ID: ${{ needs.notify-start.outputs.msg_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           if [[ -z "$MSG_ID" ]]; then exit 0; fi
 
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - << 'PYEOF'
+          import os, requests
 
-          TEXT="❌ Supernova Kernel — Build Failed
+          token   = os.environ["TG_BOT_TOKEN"]
+          chat_id = os.environ["TG_CHAT_ID"]
+          msg_id  = int(os.environ["MSG_ID"])
+          repo    = os.environ["GITHUB_REPOSITORY"]
+          run_id  = os.environ["GITHUB_RUN_ID"]
+          variant = os.environ["VARIANT"]
+          run_url = "https://github.com/" + repo + "/actions/runs/" + run_id
 
-Device  : POCO X3 NFC (surya/karna)
-Variant : ${{ matrix.variant }}
-Actions : ${RUN_URL}"
+          text = (
+              "Supernova Kernel - Build Failed\n"
+              "\n"
+              "Device  : POCO X3 NFC (surya/karna)\n"
+              "Variant : " + variant + "\n"
+              "Actions : " + run_url
+          )
 
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_BOT_TOKEN}/editMessageText" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "message_id=${MSG_ID}" \
-            --data-urlencode "text=${TEXT}" \
-            --max-time 30 > /dev/null
+          requests.post(
+              "https://api.telegram.org/bot" + token + "/editMessageText",
+              data={
+                  "chat_id"    : chat_id,
+                  "message_id" : msg_id,
+                  "text"       : text,
+              },
+              timeout=30,
+          )
+          PYEOF
 
   # ============================================================================
-  # JOB 2 — Buat satu GitHub Release setelah kedua variant selesai,
-  #          lalu edit pesan Telegram dengan link release
+  # JOB 2 — Buat satu GitHub Release setelah kedua variant selesai
   # ============================================================================
   release:
     name: Create Unified Release
@@ -493,10 +531,10 @@ Actions : ${RUN_URL}"
             echo ""
             echo "### Downloads"
             echo ""
-            echo "| Variant   | File                   | Size          |"
-            echo "|-----------|------------------------|---------------|"
-            echo "| Non-KSU   | \`${ZIP_NONKSU}\`   | ${NONKSU_SIZE} |"
-            echo "| KernelSU  | \`${ZIP_KSU}\`      | ${KSU_SIZE}    |"
+            echo "| Variant   | File                | Size           |"
+            echo "|-----------|---------------------|----------------|"
+            echo "| Non-KSU   | \`${ZIP_NONKSU}\` | ${NONKSU_SIZE} |"
+            echo "| KernelSU  | \`${ZIP_KSU}\`    | ${KSU_SIZE}    |"
             echo ""
             echo "### Last 5 Commits"
             echo ""
@@ -504,31 +542,29 @@ Actions : ${RUN_URL}"
             echo ""
             echo "### Build Info"
             echo ""
-            echo "| Key       | Value                    |"
-            echo "|-----------|--------------------------|"
-            echo "| Branch    | \`lineage-24.0\`         |"
-            echo "| Runner    | \`ubuntu-24.04\`         |"
-            echo "| Clang     | FoxeClang v18.1.8        |"
-            echo "| GCC ARM32 | FoxGCC v17.0-20260822    |"
-            echo "| Defconfig | \`${DEFCONFIG}\`         |"
+            echo "| Key       | Value                 |"
+            echo "|-----------|-----------------------|"
+            echo "| Branch    | \`lineage-24.0\`      |"
+            echo "| Runner    | \`ubuntu-24.04\`      |"
+            echo "| Clang     | FoxeClang v18.1.8     |"
+            echo "| GCC ARM32 | FoxGCC v17.0-20260822 |"
+            echo "| Defconfig | \`${DEFCONFIG}\`      |"
             echo ""
             echo "---"
             echo ""
             echo "### Supported KSU Manager (KSU variant only)"
             echo ""
-            echo "Choose one of the following managers:"
-            echo ""
-            echo "| Manager        | Link                                                           |"
-            echo "|----------------|----------------------------------------------------------------|"
-            echo "| KSU Official   | [Telegram](https://t.me/KernelSU_group/3234)                   |"
-            echo "| KernelSU-Next  | [Telegram](https://t.me/ksunext_ci)                            |"
-            echo "| KowSU          | [Telegram](https://t.me/kowsu_build)                           |"
-            echo "| MamboSU        | [Telegram](https://t.me/WebsArch)                              |"
-            echo "| xxKSU          | [GitHub](https://github.com/backslashxx/KernelSU/releases)     |"
-            echo "| BakaSU         | [Telegram](https://t.me/BakaSU_Grp/4)                          |"
-            echo "| midoriSU       | [GitHub](https://github.com/midori01/KernelSU/releases)        |"
-            echo "| FinaSU         | [Telegram](https://t.me/FinaSU)                                |"
-            echo "| OriginSU       | [Telegram](https://t.me/OriginKSU)                             |"
+            echo "| Manager       | Link                                                        |"
+            echo "|---------------|-------------------------------------------------------------|"
+            echo "| KSU Official  | [Telegram](https://t.me/KernelSU_group/3234)                |"
+            echo "| KernelSU-Next | [Telegram](https://t.me/ksunext_ci)                         |"
+            echo "| KowSU         | [Telegram](https://t.me/kowsu_build)                        |"
+            echo "| MamboSU       | [Telegram](https://t.me/WebsArch)                           |"
+            echo "| xxKSU         | [GitHub](https://github.com/backslashxx/KernelSU/releases)  |"
+            echo "| BakaSU        | [Telegram](https://t.me/BakaSU_Grp/4)                       |"
+            echo "| midoriSU      | [GitHub](https://github.com/midori01/KernelSU/releases)     |"
+            echo "| FinaSU        | [Telegram](https://t.me/FinaSU)                             |"
+            echo "| OriginSU      | [Telegram](https://t.me/OriginKSU)                          |"
             echo ""
             echo "---"
             echo "Built by [Michikoextv2](https://github.com/Michikoextv2)"
@@ -555,8 +591,7 @@ Actions : ${RUN_URL}"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # --------------------------------------------------------------------
-      # 6. Edit pesan awal Telegram → tampilkan link release
-      #    Tidak kirim pesan baru — hanya update pesan yang sudah ada
+      # 6. Edit pesan Telegram awal dengan link release
       # --------------------------------------------------------------------
       - name: Update Telegram notification with release link
         env:
@@ -568,18 +603,36 @@ Actions : ${RUN_URL}"
             exit 0
           fi
 
-          TEXT="✅ Supernova Kernel — Build Complete
+          python3 - << 'PYEOF'
+          import os, requests
 
-Device    : ${TARGET_DEVICE}
-Non-KSU   : ${NONKSU_SIZE}
-KernelSU  : ${KSU_SIZE}
-Release   : ${RELEASE_URL}"
+          token       = os.environ["TG_BOT_TOKEN"]
+          chat_id     = os.environ["TG_CHAT_ID"]
+          msg_id      = int(os.environ["MSG_ID"])
+          target      = os.environ["TARGET_DEVICE"]
+          nonksu_sz   = os.environ["NONKSU_SIZE"]
+          ksu_sz      = os.environ["KSU_SIZE"]
+          release_url = os.environ["RELEASE_URL"]
 
-          curl -s -X POST \
-            "https://api.telegram.org/bot${TG_BOT_TOKEN}/editMessageText" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "message_id=${MSG_ID}" \
-            --data-urlencode "text=${TEXT}" \
-            --max-time 30 > /dev/null
+          text = (
+              "Supernova Kernel - Build Complete\n"
+              "\n"
+              "Device    : " + target + "\n"
+              "Non-KSU   : " + nonksu_sz + "\n"
+              "KernelSU  : " + ksu_sz + "\n"
+              "Release   : " + release_url
+          )
+
+          resp = requests.post(
+              "https://api.telegram.org/bot" + token + "/editMessageText",
+              data={
+                  "chat_id"    : chat_id,
+                  "message_id" : msg_id,
+                  "text"       : text,
+              },
+              timeout=30,
+          )
+          print("HTTP status : " + str(resp.status_code))
+          PYEOF
 
           echo "Telegram message updated: ${MSG_ID}"
