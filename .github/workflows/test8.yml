@@ -1,0 +1,646 @@
+# ==============================================================================
+# Michiko Kernel - Automated Build Workflow
+# Target    : Poco X3 NFC (surya/karna)
+# Branch    : lineage-24.0
+# Runner    : ubuntu-24.04
+# Toolchain : FoxeClang v18.1.8 + FoxGCC ARM32 v17.0
+# ==============================================================================
+
+name: Supernova Kernel
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - ".github/**"
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ============================================================================
+  # JOB 1 — Compile both variants in parallel (matrix)
+  # ============================================================================
+  build:
+    name: Build Kernel [${{ matrix.variant }}]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [NonKSU, KSU]
+
+    outputs:
+      date_tag:       ${{ steps.meta.outputs.date_tag }}
+      short_sha:      ${{ steps.meta.outputs.short_sha }}
+      build_duration: ${{ steps.meta.outputs.build_duration }}
+
+    env:
+      TZ: Asia/Jakarta
+      ARCH: arm64
+      SUBARCH: arm64
+      KBUILD_BUILD_HOST: xyz
+      KBUILD_BUILD_USER: standalone
+      USE_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CLANG_DIR: ${{ github.workspace }}/toolchain/clang
+      GCC32_DIR: ${{ github.workspace }}/toolchain/gcc32
+      AK3_DIR: ${{ github.workspace }}/AnyKernel3
+      KERNEL_DIR: ${{ github.workspace }}/kernel-source
+      KERNEL_NAME: Supernova
+      TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
+      DEFCONFIG: surya_defconfig
+      ENABLE_KERNELSU: ${{ matrix.variant == 'KSU' && 'true' || 'false' }}
+      VARIANT_LABEL: ${{ matrix.variant }}
+      TG_CHAT_ID: "-1003641667794"
+      TG_THREAD_ID: "7279"
+      TG_MSG_ID_FILE: ${{ github.workspace }}/tg_msg_id.txt
+      TG_HELPER: ${{ github.workspace }}/.tg_update.py
+
+    steps:
+      # --------------------------------------------------------------------
+      # Helper — base64-encoded to avoid YAML/shell colon quoting issues
+      # --------------------------------------------------------------------
+      - name: Write Telegram helper
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwppbXBvcnQgb3MsIHN5cywgcmVxdWVzdHMKCnRva2VuICAgICA9IG9zLmVudmlyb25bIlRHX0JPVF9UT0tFTiJdCmNoYXRfaWQgICA9IG9zLmVudmlyb25bIlRHX0NIQVRfSUQiXQp0aHJlYWRfaWQgPSBvcy5lbnZpcm9uWyJUR19USFJFQURfSUQiXQptc2dfZmlsZSAgPSBvcy5lbnZpcm9uWyJUR19NU0dfSURfRklMRSJdCnZhcmlhbnQgICA9IG9zLmVudmlyb25bIlZBUklBTlRfTEFCRUwiXQpzdGF0dXMgICAgPSAiICIuam9pbihzeXMuYXJndlsxOl0pCgp0ZXh0ID0gKAogICAgIlN1cGVybm92YSBLZXJuZWwgWyIgKyB2YXJpYW50ICsgIl1cbiIKICAgICJcbiIKICAgICJTdGF0dXMgIDogIiArIHN0YXR1cwopCgpiYXNlID0gImh0dHBzOi8vYXBpLnRlbGVncmFtLm9yZy9ib3QiICsgdG9rZW4KCm1zZ19pZCA9IE5vbmUKaWYgb3MucGF0aC5leGlzdHMobXNnX2ZpbGUpOgogICAgd2l0aCBvcGVuKG1zZ19maWxlKSBhcyBmOgogICAgICAgIGNvbnRlbnQgPSBmLnJlYWQoKS5zdHJpcCgpCiAgICAgICAgaWYgY29udGVudC5pc2RpZ2l0KCk6CiAgICAgICAgICAgIG1zZ19pZCA9IGludChjb250ZW50KQoKaWYgbXNnX2lkOgogICAgcmVzcCA9IHJlcXVlc3RzLnBvc3QoCiAgICAgICAgYmFzZSArICIvZWRpdE1lc3NhZ2VUZXh0IiwKICAgICAgICBkYXRhPXsiY2hhdF9pZCI6IGNoYXRfaWQsICJtZXNzYWdlX2lkIjogbXNnX2lkLCAidGV4dCI6IHRleHR9LAogICAgICAgIHRpbWVvdXQ9MzAsCiAgICApCmVsc2U6CiAgICByZXNwID0gcmVxdWVzdHMucG9zdCgKICAgICAgICBiYXNlICsgIi9zZW5kTWVzc2FnZSIsCiAgICAgICAgZGF0YT17ImNoYXRfaWQiOiBjaGF0X2lkLCAibWVzc2FnZV90aHJlYWRfaWQiOiB0aHJlYWRfaWQsICJ0ZXh0IjogdGV4dH0sCiAgICAgICAgdGltZW91dD0zMCwKICAgICkKICAgIHJlc3VsdCA9IHJlc3AuanNvbigpCiAgICBpZiByZXN1bHQuZ2V0KCJvayIpOgogICAgICAgIHdpdGggb3Blbihtc2dfZmlsZSwgInciKSBhcyBmOgogICAgICAgICAgICBmLndyaXRlKHN0cihyZXN1bHRbInJlc3VsdCJdWyJtZXNzYWdlX2lkIl0pKQoKcHJpbnQoIkhUVFAgIiArIHN0cihyZXNwLnN0YXR1c19jb2RlKSkK" | base64 -d > "$TG_HELPER"
+          chmod +x "$TG_HELPER"
+          python3 "$TG_HELPER" "Initializing build environment..."
+
+      # --------------------------------------------------------------------
+      # 0. Inject GH_PAT
+      # --------------------------------------------------------------------
+      - name: Configure git credentials
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.GH_PAT }}@github.com" \
+            > ~/.git-credentials
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf \
+            "https://github.com/"
+          python3 "$TG_HELPER" "Git credentials: configured"
+
+      # --------------------------------------------------------------------
+      # 1. Checkout kernel source
+      # --------------------------------------------------------------------
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: FoxMiko-Labs/kernel_xiaomi_surya
+          ref: rebase
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 5
+          path: kernel-source
+
+      - name: Notify checkout
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Kernel source: cloned"
+
+      # --------------------------------------------------------------------
+      # 1.5. Implant NoMount
+      # --------------------------------------------------------------------
+      - name: Implant NoMount
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Implanting NoMount..."
+          cd "$KERNEL_DIR"
+          curl -fsSL https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -
+          python3 "$TG_HELPER" "NoMount: implanted"
+
+      # --------------------------------------------------------------------
+      # 1.6. Setup KernelSU
+      # --------------------------------------------------------------------
+      - name: Setup KernelSU
+        if: env.ENABLE_KERNELSU == 'true'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Setting up KernelSU..."
+          cd "$KERNEL_DIR"
+          curl -LSs "https://raw.githubusercontent.com/manipvlator/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          python3 "$TG_HELPER" "KernelSU: configured"
+
+      # --------------------------------------------------------------------
+      # 2. Configure swap
+      # --------------------------------------------------------------------
+      - name: Configure swap
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          sudo sysctl -w vm.swappiness=10
+          echo "Swap total : $(free -h | awk '/^Swap:/ {print $2}')"
+
+      # --------------------------------------------------------------------
+      # 3. Install build dependencies
+      # --------------------------------------------------------------------
+      - name: Install build dependencies
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Installing build dependencies..."
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl \
+            flex git jq libelf-dev libssl-dev \
+            python3 python3-requests unzip xz-utils zstd ccache lz4 \
+            rsync dwarves make libdw-dev pkg-config device-tree-compiler
+          python3 "$TG_HELPER" "Dependencies: installed"
+
+      # --------------------------------------------------------------------
+      # 4. Restore / download FoxeClang
+      # --------------------------------------------------------------------
+      - name: Restore FoxeClang cache
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: FoxeClang-18.1.8-20260916
+
+      - name: Download and extract FoxeClang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Downloading FoxeClang v18.1.8..."
+          mkdir -p "$CLANG_DIR"
+          curl -fSL --retry 3 -o foxe-clang.tar.zst \
+            "https://github.com/FoxMiko-Labs/FoxeClang/releases/download/v18.1.8-20260916/FoxeClang-18.1.8-20260916.tar.zst"
+          tar --use-compress-program=zstd -xf foxe-clang.tar.zst \
+            -C "$CLANG_DIR" --strip-components=1
+          rm -f foxe-clang.tar.zst
+          python3 "$TG_HELPER" "FoxeClang v18.1.8: ready"
+
+      # --------------------------------------------------------------------
+      # 5. Restore / download FoxGCC ARM32
+      # --------------------------------------------------------------------
+      - name: Restore FoxGCC ARM32 cache
+        id: cache-gcc32
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GCC32_DIR }}
+          key: fox-gcc32-v17.0-20260822
+
+      - name: Download and extract FoxGCC ARM32
+        if: steps.cache-gcc32.outputs.cache-hit != 'true'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "Downloading FoxGCC ARM32 v17.0..."
+          mkdir -p "$GCC32_DIR"
+          curl -fSL --retry 3 -o fox-gcc32.tar.zst \
+            "https://github.com/FoxMiko-Labs/Fox-GCC/releases/download/v17.0-20260822/FoxGCC-17-arm-20260822.tar.zst"
+          tar --use-compress-program=zstd -xf fox-gcc32.tar.zst \
+            -C "$GCC32_DIR" --strip-components=1
+          rm -f fox-gcc32.tar.zst
+          python3 "$TG_HELPER" "FoxGCC ARM32 v17.0: ready"
+
+      # --------------------------------------------------------------------
+      # 6. Validate toolchains
+      # --------------------------------------------------------------------
+      - name: Validate toolchains
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          set -e
+          if [[ ! -x "$CLANG_DIR/bin/clang" ]]; then
+            echo "::error::clang not found at $CLANG_DIR/bin/clang"
+            exit 1
+          fi
+          CLANG_VERSION="$("$CLANG_DIR/bin/clang" --version | head -n1)"
+          echo "Clang  : ${CLANG_VERSION}"
+          echo "CLANG_VERSION=${CLANG_VERSION}" >> "$GITHUB_ENV"
+
+          GCC32_BIN=$(find "$GCC32_DIR" -name "arm-eabi-gcc" -type f | head -1)
+          if [[ -z "$GCC32_BIN" ]]; then
+            echo "::warning::arm-eabi-gcc not found in $GCC32_DIR"
+          else
+            echo "GCC32  : $GCC32_BIN"
+          fi
+          python3 "$TG_HELPER" "Toolchains: validated"
+
+      # --------------------------------------------------------------------
+      # 7. Restore and configure ccache
+      # --------------------------------------------------------------------
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-surya-${{ matrix.variant }}-${{ github.sha }}
+          restore-keys: |
+            ccache-surya-${{ matrix.variant }}-
+            ccache-surya-
+            ccache-
+
+      - name: Configure ccache
+        run: |
+          ccache --max-size=5G
+          ccache --zero-stats
+
+      # --------------------------------------------------------------------
+      # 8. Resolve metadata
+      # --------------------------------------------------------------------
+      - name: Resolve metadata
+        id: meta
+        run: |
+          DATE_TAG=$(TZ=Asia/Jakarta date +%d%m%Y)
+          SHORT_SHA=$(git -C "$KERNEL_DIR" rev-parse --short=7 HEAD)
+
+          if [[ "$ENABLE_KERNELSU" == "true" ]]; then
+            VARIANT_DISPLAY="KernelSU"
+          else
+            VARIANT_DISPLAY="Non-KSU"
+          fi
+
+          ZIP_NAME="${KERNEL_NAME}-${VARIANT_LABEL}-${DATE_TAG}.zip"
+
+          echo "DATE_TAG=${DATE_TAG}"               >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}"             >> "$GITHUB_ENV"
+          echo "VARIANT_DISPLAY=${VARIANT_DISPLAY}" >> "$GITHUB_ENV"
+          echo "ZIP_NAME=${ZIP_NAME}"               >> "$GITHUB_ENV"
+          echo "ZIP_PATH=${GITHUB_WORKSPACE}/${ZIP_NAME}" >> "$GITHUB_ENV"
+
+          echo "date_tag=${DATE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # --------------------------------------------------------------------
+      # 9. Build kernel
+      # --------------------------------------------------------------------
+      - name: Build kernel [${{ matrix.variant }}]
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          echo "Device    : $TARGET_DEVICE"
+          echo "Defconfig : $DEFCONFIG"
+          echo "Variant   : $VARIANT_DISPLAY"
+          echo "CPU cores : $(nproc --all)"
+
+          if [[ ! -f "$KERNEL_DIR/buildci.sh" ]]; then
+            echo "::error::buildci.sh not found"
+            ls -la "$KERNEL_DIR"
+            exit 1
+          fi
+
+          python3 "$TG_HELPER" "Compiling kernel — this may take a while..."
+          echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
+          chmod +x "$KERNEL_DIR/buildci.sh"
+          cd "$KERNEL_DIR"
+          bash buildci.sh
+
+          echo "BUILD_END=$(date +%s)" >> "$GITHUB_ENV"
+          python3 "$TG_HELPER" "Kernel: compiled successfully"
+
+      # --------------------------------------------------------------------
+      # 10. Verify kernel output
+      # --------------------------------------------------------------------
+      - name: Verify kernel output
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          IMAGE="$KERNEL_DIR/out/arch/arm64/boot/Image.gz"
+          if [[ ! -f "$IMAGE" ]]; then
+            echo "::error::Kernel image not found"
+            exit 1
+          fi
+          echo "Kernel image : $(du -sh "$IMAGE" | cut -f1)"
+          python3 "$TG_HELPER" "Kernel image verified — packaging ZIP..."
+
+      # --------------------------------------------------------------------
+      # 11. Clone AnyKernel3
+      # --------------------------------------------------------------------
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 \
+            https://github.com/Michikoextv2/AK3-Surya.git \
+            -b snova "$AK3_DIR"
+
+      # --------------------------------------------------------------------
+      # 12. Package kernel ZIP
+      # --------------------------------------------------------------------
+      - name: Package kernel ZIP
+        id: package
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          for img in Image.gz dtb.img dtbo.img; do
+            src="$KERNEL_DIR/out/arch/arm64/boot/$img"
+            if [[ -f "$src" ]]; then
+              cp "$src" "$AK3_DIR/kernels"
+              echo "Copied : $img"
+            else
+              echo "Skip   : $img (not found)"
+            fi
+          done
+
+          (
+            cd "$AK3_DIR"
+            zip -r9 "$ZIP_PATH" . \
+              -x "*.git*" \
+              -x "README.md" \
+              -x "*.github*"
+          )
+
+          ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+          echo "ZIP_SIZE=${ZIP_SIZE}" >> "$GITHUB_ENV"
+
+          BUILD_DURATION_SEC=$(( BUILD_END - BUILD_START ))
+          BUILD_DURATION="${BUILD_DURATION_SEC}s"
+          if (( BUILD_DURATION_SEC >= 60 )); then
+            BUILD_DURATION="$(( BUILD_DURATION_SEC / 60 ))m $(( BUILD_DURATION_SEC % 60 ))s"
+          fi
+          echo "BUILD_DURATION=${BUILD_DURATION}" >> "$GITHUB_ENV"
+          echo "build_duration=${BUILD_DURATION}" >> "$GITHUB_OUTPUT"
+
+          echo "Packaged : ${ZIP_NAME} (${ZIP_SIZE})"
+          python3 "$TG_HELPER" "ZIP packaged (${ZIP_SIZE}) — waiting for release job..."
+
+      # --------------------------------------------------------------------
+      # 13. Upload ZIP as artifact (consumed by the release job)
+      # --------------------------------------------------------------------
+      - name: Upload kernel ZIP as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          retention-days: 1
+
+      # --------------------------------------------------------------------
+      # 13.1. Upload Telegram message_id so the release job can delete it
+      # --------------------------------------------------------------------
+      - name: Upload Telegram message_id artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tg-msg-id-${{ matrix.variant }}
+          path: ${{ github.workspace }}/tg_msg_id.txt
+          retention-days: 1
+          if-no-files-found: ignore
+
+      # --------------------------------------------------------------------
+      # 14. Show ccache stats
+      # --------------------------------------------------------------------
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
+
+      # --------------------------------------------------------------------
+      # 15. Notify on failure
+      # --------------------------------------------------------------------
+      - name: Notify build failed
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 "$TG_HELPER" "FAILED — check Actions for details"
+
+  # ============================================================================
+  # JOB 2 — Create one unified GitHub Release after both variants finish
+  # ============================================================================
+  release:
+    name: Create Unified Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: build
+
+    permissions:
+      contents: write
+
+    env:
+      TG_CHAT_ID: "-1003641667794"
+      TG_THREAD_ID: "7279"
+      TARGET_DEVICE: "POCO X3 NFC (surya/karna)"
+      DEFCONFIG: surya_defconfig
+      KERNEL_NAME: Supernova
+
+    steps:
+      # --------------------------------------------------------------------
+      # 1. Resolve shared metadata from build job outputs
+      # --------------------------------------------------------------------
+      - name: Resolve release metadata
+        run: |
+          DATE_TAG="${{ needs.build.outputs.date_tag }}"
+          SHORT_SHA="${{ needs.build.outputs.short_sha }}"
+
+          RELEASE_TAG="${DATE_TAG}-${SHORT_SHA}"
+          RELEASE_NAME="Supernova-${DATE_TAG}-${SHORT_SHA}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+
+          ZIP_NONKSU="${KERNEL_NAME}-NonKSU-${DATE_TAG}.zip"
+          ZIP_KSU="${KERNEL_NAME}-KSU-${DATE_TAG}.zip"
+
+          echo "DATE_TAG=${DATE_TAG}"           >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}"         >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}"     >> "$GITHUB_ENV"
+          echo "RELEASE_NAME=${RELEASE_NAME}"   >> "$GITHUB_ENV"
+          echo "RELEASE_URL=${RELEASE_URL}"     >> "$GITHUB_ENV"
+          echo "ZIP_NONKSU=${ZIP_NONKSU}"       >> "$GITHUB_ENV"
+          echo "ZIP_KSU=${ZIP_KSU}"             >> "$GITHUB_ENV"
+
+      # --------------------------------------------------------------------
+      # 2. Download both ZIPs and both message_id files
+      # --------------------------------------------------------------------
+      - name: Download NonKSU artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ZIP_NONKSU }}
+          path: dist
+
+      - name: Download KSU artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ZIP_KSU }}
+          path: dist
+
+      - name: Download NonKSU Telegram message_id
+        uses: actions/download-artifact@v4
+        with:
+          name: tg-msg-id-NonKSU
+          path: tg-ids/NonKSU
+        continue-on-error: true
+
+      - name: Download KSU Telegram message_id
+        uses: actions/download-artifact@v4
+        with:
+          name: tg-msg-id-KSU
+          path: tg-ids/KSU
+        continue-on-error: true
+
+      - name: List downloaded artifacts
+        run: ls -lh dist/ && find tg-ids/ -type f 2>/dev/null || true
+
+      # --------------------------------------------------------------------
+      # 3. Delete both live-status messages from Telegram
+      # --------------------------------------------------------------------
+      - name: Delete live-status Telegram messages
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, glob, requests
+
+          token   = os.environ["TG_BOT_TOKEN"]
+          chat_id = os.environ["TG_CHAT_ID"]
+          base    = "https://api.telegram.org/bot" + token
+
+          # artifact download puts the file flat inside the named folder
+          for id_file in glob.glob("tg-ids/*/tg_msg_id.txt"):
+              content = open(id_file).read().strip()
+              print("Found id_file: " + id_file + " content: " + content)
+              if not content.isdigit():
+                  continue
+              msg_id = int(content)
+              resp = requests.post(
+                  base + "/deleteMessage",
+                  data={"chat_id": chat_id, "message_id": msg_id},
+                  timeout=30,
+              )
+              print("Deleted msg_id " + str(msg_id) + " — HTTP " + str(resp.status_code))
+          PYEOF
+
+      # --------------------------------------------------------------------
+      # 4. Checkout kernel source (for commit log only, shallow)
+      # --------------------------------------------------------------------
+      - name: Checkout kernel source for commit log
+        run: |
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.GH_PAT }}@github.com" \
+            > ~/.git-credentials
+          git clone --depth=6 --no-checkout \
+            https://github.com/FoxMiko-Labs/kernel_xiaomi_surya.git \
+            kernel-log
+          cd kernel-log
+          git fetch origin rebase
+          git checkout FETCH_HEAD
+
+      # --------------------------------------------------------------------
+      # 5. Generate unified release notes
+      # --------------------------------------------------------------------
+      - name: Generate release notes
+        run: |
+          NONKSU_SIZE=$(du -sh "dist/${ZIP_NONKSU}" | cut -f1)
+          KSU_SIZE=$(du -sh "dist/${ZIP_KSU}" | cut -f1)
+
+          COMMIT_LOG=$(git -C kernel-log log -5 \
+            --pretty=format:"- \`%h\` %s (%an)" --no-merges)
+
+          {
+            echo "## Supernova-${DATE_TAG}-${SHORT_SHA}"
+            echo ""
+            echo "### Device"
+            echo "- **Target:** ${TARGET_DEVICE}"
+            echo ""
+            echo "### Downloads"
+            echo ""
+            echo "| Variant   | File                | Size           |"
+            echo "|-----------|---------------------|----------------|"
+            echo "| Non-KSU   | \`${ZIP_NONKSU}\` | ${NONKSU_SIZE} |"
+            echo "| KernelSU  | \`${ZIP_KSU}\`    | ${KSU_SIZE}    |"
+            echo ""
+            echo "### Last 5 Commits"
+            echo ""
+            echo "${COMMIT_LOG}"
+            echo ""
+            echo "### Build Info"
+            echo ""
+            echo "| Key       | Value                 |"
+            echo "|-----------|-----------------------|"
+            echo "| Branch    | \`lineage-24.0\`      |"
+            echo "| Runner    | \`ubuntu-24.04\`      |"
+            echo "| Clang     | FoxeClang v18.1.8     |"
+            echo "| GCC ARM32 | FoxGCC v17.0-20260822 |"
+            echo "| Defconfig | \`${DEFCONFIG}\`      |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Supported KSU Manager (KSU variant only)"
+            echo ""
+            echo "| Manager       | Link                                                        |"
+            echo "|---------------|-------------------------------------------------------------|"
+            echo "| KSU Official  | [Telegram](https://t.me/KernelSU_group/3234)                |"
+            echo "| KernelSU-Next | [Telegram](https://t.me/ksunext_ci)                         |"
+            echo "| KowSU         | [Telegram](https://t.me/kowsu_build)                        |"
+            echo "| MamboSU       | [Telegram](https://t.me/WebsArch)                           |"
+            echo "| xxKSU         | [GitHub](https://github.com/backslashxx/KernelSU/releases)  |"
+            echo "| BakaSU        | [Telegram](https://t.me/BakaSU_Grp/4)                       |"
+            echo "| midoriSU      | [GitHub](https://github.com/midori01/KernelSU/releases)     |"
+            echo "| FinaSU        | [Telegram](https://t.me/FinaSU)                             |"
+            echo "| OriginSU      | [Telegram](https://t.me/OriginKSU)                          |"
+            echo ""
+            echo "---"
+            echo "Built by [Michikoextv2](https://github.com/Michikoextv2)"
+          } > release_notes.md
+
+          echo "NONKSU_SIZE=${NONKSU_SIZE}" >> "$GITHUB_ENV"
+          echo "KSU_SIZE=${KSU_SIZE}"       >> "$GITHUB_ENV"
+
+      # --------------------------------------------------------------------
+      # 6. Create unified GitHub Release with both ZIPs
+      # --------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          body_path: release_notes.md
+          files: |
+            dist/${{ env.ZIP_NONKSU }}
+            dist/${{ env.ZIP_KSU }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --------------------------------------------------------------------
+      # 7. Notify Telegram — release published
+      # --------------------------------------------------------------------
+      - name: Notify Telegram — release published
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, requests
+
+          token     = os.environ["TG_BOT_TOKEN"]
+          chat_id   = os.environ["TG_CHAT_ID"]
+          thread_id = os.environ["TG_THREAD_ID"]
+
+          text = (
+              "Supernova Kernel - Release Published\n"
+              "\n"
+              "Device     : " + os.environ["TARGET_DEVICE"] + "\n"
+              "Non-KSU    : " + os.environ["NONKSU_SIZE"] + "\n"
+              "KernelSU   : " + os.environ["KSU_SIZE"] + "\n"
+              "Release    : " + os.environ["RELEASE_URL"]
+          )
+
+          resp = requests.post(
+              "https://api.telegram.org/bot" + token + "/sendMessage",
+              data={
+                  "chat_id"           : chat_id,
+                  "message_thread_id" : thread_id,
+                  "text"              : text,
+              },
+              timeout=30,
+          )
+          print("HTTP status : " + str(resp.status_code))
+          PYEOF
